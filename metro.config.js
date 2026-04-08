@@ -1,7 +1,7 @@
 const { getDefaultConfig } = require('expo/metro-config')
 const path = require('path')
 
-const sharedDir = path.resolve(__dirname, '../packages/shared')
+const sharedDir = path.resolve(__dirname, 'packages/shared')
 
 const config = getDefaultConfig(__dirname)
 

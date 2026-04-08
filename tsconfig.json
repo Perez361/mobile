@@ -7,14 +7,14 @@
         "./*"
       ],
       "@importflow/shared": [
-        "../packages/shared/index.ts"
+        "packages/shared/index.ts"
       ]
     }
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    "../packages/shared/**/*.ts",
+    "packages/shared/**/*.ts",
     ".expo/types/**/*.d.ts",
     "expo-env.d.ts",
     ".expo/types/**/*.ts"
