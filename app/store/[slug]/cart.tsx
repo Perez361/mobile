@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
-  Image, ActivityIndicator, Alert, StyleSheet,
+  Image, ActivityIndicator, StyleSheet,
 } from 'react-native'
+import { useAlert } from '@/components/ui/AlertModal'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -16,6 +17,7 @@ import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 export default function CartScreen() {
   const router = useRouter()
   const { user, customer, loading: sessionLoading, error, storeSlug } = useCustomerContext()
+  const { showAlert } = useAlert()
   const [cartItems, setCartItems] = useState<any[]>([])
   const [cartId, setCartId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -64,41 +66,40 @@ export default function CartScreen() {
 
   async function handleCheckout() {
     if (!customer || cartItems.length === 0) return
-    Alert.alert(
-      'Place Order',
-      `Confirm your order for ${formatCurrency(total)}?\n\nShipping fee will be billed separately once your items arrive.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Place Order',
-          onPress: async () => {
-            setPlacing(true)
-            try {
-              const supabase = createCustomerClient(slug)
-              const { data: order, error } = await supabase
-                .from('orders')
-                .insert({ customer_id: customer.id, store_id: customer.store_id, total })
-                .select()
-                .single()
-              if (error || !order) { Alert.alert('Error', 'Failed to place order. Please try again.'); return }
-              await supabase.from('order_items').insert(
-                cartItems.map((item: any) => ({
-                  order_id: order.id, product_id: item.product_id,
-                  quantity: item.quantity, price: item.products.price,
-                })),
-              )
-              if (cartId) await supabase.from('cart_items').delete().eq('cart_id', cartId)
-              setCartItems([])
-              Alert.alert(
-                'Order placed!',
-                'Your order has been placed. The importer will process it and notify you once your items arrive.',
-                [{ text: 'Track Order', onPress: () => router.push(`/store/${slug}/orders`) }],
-              )
-            } finally { setPlacing(false) }
-          },
-        },
-      ],
-    )
+    showAlert({
+      type: 'confirm',
+      title: 'Place Order',
+      message: `Confirm your order for ${formatCurrency(total)}?\n\nShipping fee will be billed separately once your items arrive.`,
+      confirmText: 'Place Order',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        setPlacing(true)
+        try {
+          const supabase = createCustomerClient(slug)
+          const { data: order, error } = await supabase
+            .from('orders')
+            .insert({ customer_id: customer.id, store_id: customer.store_id, total })
+            .select()
+            .single()
+          if (error || !order) { showAlert({ type: 'error', title: 'Error', message: 'Failed to place order. Please try again.' }); return }
+          await supabase.from('order_items').insert(
+            cartItems.map((item: any) => ({
+              order_id: order.id, product_id: item.product_id,
+              quantity: item.quantity, price: item.products.price,
+            })),
+          )
+          if (cartId) await supabase.from('cart_items').delete().eq('cart_id', cartId)
+          setCartItems([])
+          showAlert({
+            type: 'success',
+            title: 'Order placed!',
+            message: 'Your order has been placed. The importer will process it and notify you once your items arrive.',
+            confirmText: 'Track Order',
+            onConfirm: () => router.push(`/store/${slug}/orders`),
+          })
+        } finally { setPlacing(false) }
+      },
+    })
   }
 
   // Only block on session resolution

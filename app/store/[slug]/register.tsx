@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, Alert, StyleSheet } from 'react-native'
+import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, StyleSheet } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { createCustomerClient } from '@/lib/supabase/customer-client'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { useAlert } from '@/components/ui/AlertModal'
 import { Colors, FontSize, Spacing } from '@/constants/theme'
 
 const schema = z.object({
@@ -25,13 +26,14 @@ export default function CustomerRegisterScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
   const [loading, setLoading] = useState(false)
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
+  const { showAlert } = useAlert()
 
   async function onSubmit(data: FormData) {
     setLoading(true)
     try {
       const supabase = createCustomerClient(slug)
       const { data: imp } = await supabase.from('importers').select('id').ilike('store_slug', slug).single()
-      if (!imp) { Alert.alert('Error', 'Store not found.'); return }
+      if (!imp) { showAlert({ type: 'error', title: 'Error', message: 'Store not found.' }); return }
 
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: data.email, password: data.password,
@@ -46,7 +48,7 @@ export default function CustomerRegisterScreen() {
           },
         },
       })
-      if (signUpError) { Alert.alert('Registration failed', signUpError.message); return }
+      if (signUpError) { showAlert({ type: 'error', title: 'Registration failed', message: signUpError.message }); return }
 
       // If email confirmation is off, session is active — insert customer row directly
       if (authData.session && authData.user) {
@@ -55,14 +57,18 @@ export default function CustomerRegisterScreen() {
           email: data.email, contact: data.phone,
           location: data.location || null, shipping_address: data.shippingAddress || null,
         })
-        if (upsertError) { Alert.alert('Registration failed', upsertError.message); return }
+        if (upsertError) { showAlert({ type: 'error', title: 'Registration failed', message: upsertError.message }); return }
       }
 
-      Alert.alert('Account created', 'Welcome! You can now start shopping.', [
-        { text: 'Shop Now', onPress: () => router.replace(`/store/${slug}`) },
-      ])
+      showAlert({
+        type: 'success',
+        title: 'Account created',
+        message: 'Welcome! You can now start shopping.',
+        confirmText: 'Shop Now',
+        onConfirm: () => router.replace(`/store/${slug}`),
+      })
     } catch (e: any) {
-      Alert.alert('Registration failed', e?.message ?? 'Something went wrong. Please try again.')
+      showAlert({ type: 'error', title: 'Registration failed', message: e?.message ?? 'Something went wrong. Please try again.' })
     } finally { setLoading(false) }
   }
 

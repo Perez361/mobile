@@ -4,12 +4,15 @@
  */
 import { useState } from 'react'
 import {
-  View, Text, Image, TouchableOpacity, ActivityIndicator,
-  Alert, StyleSheet, Platform,
+  View, Text, TouchableOpacity, ActivityIndicator,
+  StyleSheet,
 } from 'react-native'
+import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
+import * as ImageManipulator from 'expo-image-manipulator'
 import { Ionicons } from '@expo/vector-icons'
 import { createImporterClient } from '@/lib/supabase/importer-client'
+import { useAlert } from '@/components/ui/AlertModal'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
 interface Props {
@@ -21,6 +24,12 @@ interface Props {
 
 export function ImagePickerField({ value, userId, onUpload, error }: Props) {
   const [uploading, setUploading] = useState(false)
+  const [localPreview, setLocalPreview] = useState<string | null>(null)
+  const { showAlert } = useAlert()
+
+  // Show localPreview while uploading for instant feedback.
+  // Once upload succeeds we clear it and fall through to the remote `value`.
+  const displayValue = localPreview ?? value ?? undefined
 
   async function requestPermission(source: 'library' | 'camera') {
     if (source === 'camera') {
@@ -34,7 +43,11 @@ export function ImagePickerField({ value, userId, onUpload, error }: Props) {
   async function pick(source: 'library' | 'camera') {
     const granted = await requestPermission(source)
     if (!granted) {
-      Alert.alert('Permission needed', `Allow access to your ${source === 'camera' ? 'camera' : 'photo library'} in Settings.`)
+      showAlert({
+        type: 'error',
+        title: 'Permission needed',
+        message: `Allow access to your ${source === 'camera' ? 'camera' : 'photo library'} in Settings.`,
+      })
       return
     }
 
@@ -45,9 +58,16 @@ export function ImagePickerField({ value, userId, onUpload, error }: Props) {
     if (result.canceled || !result.assets?.[0]) return
 
     const asset = result.assets[0]
+
+    // Show the original picker URI as an optimistic preview while upload runs
+    setLocalPreview(asset.uri)
     setUploading(true)
+
     try {
       await uploadImage(asset.uri, asset.mimeType ?? 'image/jpeg')
+    } catch {
+      // Upload failed — clear the optimistic preview so we don't show a dead URI
+      setLocalPreview(null)
     } finally {
       setUploading(false)
     }
@@ -56,62 +76,81 @@ export function ImagePickerField({ value, userId, onUpload, error }: Props) {
   async function uploadImage(uri: string, mimeType: string) {
     const supabase = createImporterClient()
 
-    // Generate file path: userId/uuid.ext
-    const ext = mimeType.split('/')[1] || 'jpg'
-    const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+    // Compress: resize to max 1200px wide, JPEG at 80% quality.
+    // This typically cuts file size by 60–80% vs the raw picker output.
+    const compressed = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1200 } }],
+      { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+    )
 
-    // Read the image as a blob
-    const response = await fetch(uri)
+    const response = await fetch(compressed.uri)
+    if (!response.ok) throw new Error('Failed to read compressed image')
     const blob = await response.blob()
 
-    const { error } = await supabase.storage
-      .from('product-images')
-      .upload(fileName, blob, { contentType: mimeType, upsert: false })
+    const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
 
-    if (error) {
-      Alert.alert('Upload failed', error.message)
-      return
+    const { error: uploadError } = await supabase.storage
+      .from('product-images')
+      .upload(fileName, blob, { contentType: 'image/jpeg' })
+
+    if (uploadError) {
+      showAlert({ type: 'error', title: 'Upload failed', message: uploadError.message })
+      throw uploadError
     }
 
     const { data } = supabase.storage.from('product-images').getPublicUrl(fileName)
+
+    // Clear local preview BEFORE calling onUpload so that when the parent
+    // sets `value` to the public URL, displayValue immediately shows the
+    // remote URL with no stale local URI in the way.
+    setLocalPreview(null)
     onUpload(data.publicUrl)
   }
 
   async function removeImage() {
-    if (!value) return
-    Alert.alert('Remove image', 'Remove the current product image?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove', style: 'destructive', onPress: async () => {
-          // Extract path from URL and delete from storage
+    if (!value && !localPreview) return
+    showAlert({
+      type: 'confirm',
+      title: 'Remove image',
+      message: 'Remove the current product image?',
+      confirmText: 'Remove',
+      variant: 'danger',
+      onConfirm: async () => {
+        if (value) {
           const pathMatch = value.split('/product-images/')[1]
           if (pathMatch) {
             const supabase = createImporterClient()
             await supabase.storage.from('product-images').remove([decodeURIComponent(pathMatch)])
           }
-          onUpload(null)
-        },
+        }
+        setLocalPreview(null)
+        onUpload(null)
       },
-    ])
-  }
-
-  function showPicker() {
-    Alert.alert('Product Image', 'Choose a source', [
-      { text: 'Camera', onPress: () => pick('camera') },
-      { text: 'Photo Library', onPress: () => pick('library') },
-      { text: 'Cancel', style: 'cancel' },
-    ])
+    })
   }
 
   return (
     <View style={s.root}>
       <Text style={s.label}>Product Image</Text>
 
-      {value ? (
+      {displayValue ? (
         <View style={s.preview}>
-          <Image source={{ uri: value }} style={s.image} resizeMode="cover" />
+          <Image
+            source={{ uri: displayValue }}
+            style={s.image}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="none"
+          />
+          {uploading && (
+            <View style={s.imageOverlay}>
+              <ActivityIndicator color={Colors.brand} />
+              <Text style={s.uploadingText}>Uploading…</Text>
+            </View>
+          )}
           <View style={s.previewActions}>
-            <TouchableOpacity style={s.changeBtn} onPress={showPicker} disabled={uploading}>
+            <TouchableOpacity style={s.changeBtn} onPress={() => pick('library')} disabled={uploading}>
               <Ionicons name="camera-outline" size={14} color={Colors.brand} />
               <Text style={s.changeBtnText}>Change</Text>
             </TouchableOpacity>
@@ -124,7 +163,7 @@ export function ImagePickerField({ value, userId, onUpload, error }: Props) {
       ) : (
         <TouchableOpacity
           style={[s.placeholder, error ? s.placeholderError : null]}
-          onPress={showPicker}
+          onPress={() => pick('library')}
           disabled={uploading}
           activeOpacity={0.7}
         >
@@ -140,14 +179,6 @@ export function ImagePickerField({ value, userId, onUpload, error }: Props) {
             </>
           )}
         </TouchableOpacity>
-      )}
-
-      {uploading && !value && null /* spinner already in placeholder */}
-      {uploading && value && (
-        <View style={s.uploadingOverlay}>
-          <ActivityIndicator color={Colors.brand} />
-          <Text style={s.uploadingText}>Uploading…</Text>
-        </View>
       )}
 
       {!!error && <Text style={s.error}>{error}</Text>}
@@ -176,6 +207,12 @@ const s = StyleSheet.create({
 
   preview: { gap: Spacing.sm },
   image: { width: '100%', height: 200, borderRadius: Radius.lg, backgroundColor: Colors.surface },
+  imageOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: 200,
+    borderRadius: Radius.lg, backgroundColor: 'rgba(255,255,255,0.6)',
+    alignItems: 'center', justifyContent: 'center', gap: Spacing.xs,
+  },
+  uploadingText: { fontSize: FontSize.xs, color: Colors.textMuted },
   previewActions: { flexDirection: 'row', gap: Spacing.sm },
   changeBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -191,12 +228,6 @@ const s = StyleSheet.create({
     backgroundColor: Colors.dangerLight, borderWidth: 1, borderColor: Colors.danger,
   },
   removeBtnText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.danger },
-
-  uploadingOverlay: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    paddingVertical: Spacing.sm,
-  },
-  uploadingText: { fontSize: FontSize.xs, color: Colors.textMuted },
 
   error: { fontSize: FontSize.xs, color: Colors.danger },
 })

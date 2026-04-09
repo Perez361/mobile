@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Image, StyleSheet, Alert } from 'react-native'
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Image, StyleSheet } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -9,12 +9,14 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useAlert } from '@/components/ui/AlertModal'
 import { formatCurrency } from '@/lib/utils'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
 export default function ProductsScreen() {
   const router = useRouter()
   const { user, importer } = useImporterSession()
+  const { showAlert } = useAlert()
   const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -30,13 +32,17 @@ export default function ProductsScreen() {
   async function onRefresh() { setRefreshing(true); await fetch(); setRefreshing(false) }
 
   function handleDelete(product: any) {
-    Alert.alert('Delete Product', `Delete "${product.name}"? This cannot be undone.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
+    showAlert({
+      type: 'confirm',
+      title: 'Delete Product',
+      message: `Delete "${product.name}"? This cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
         await createImporterClient().from('products').delete().eq('id', product.id)
         setProducts((prev) => prev.filter((p) => p.id !== product.id))
-      }},
-    ])
+      },
+    })
   }
 
   if (loading) return <LoadingSpinner fullScreen />

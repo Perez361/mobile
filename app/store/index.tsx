@@ -1,16 +1,18 @@
 import { useState } from 'react'
-import { View, Text, KeyboardAvoidingView, Platform, Alert, StyleSheet } from 'react-native'
+import { View, Text, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { createCustomerClient } from '@/lib/supabase/customer-client'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { useAlert } from '@/components/ui/AlertModal'
 import { Colors, FontSize, Spacing } from '@/constants/theme'
 
 export default function StoreEntryScreen() {
   const router = useRouter()
   const [slug, setSlug] = useState('')
   const [loading, setLoading] = useState(false)
+  const { showAlert } = useAlert()
 
   async function handleVisit() {
     const trimmed = slug.trim().toLowerCase()
@@ -18,10 +20,10 @@ export default function StoreEntryScreen() {
     setLoading(true)
     try {
       const { data, error } = await createCustomerClient(trimmed).from('importers').select('id, store_slug').ilike('store_slug', trimmed).single()
-      if (error || !data) { Alert.alert('Store not found', `No store found for "${trimmed}". Check the name and try again.`); return }
+      if (error || !data) { showAlert({ type: 'error', title: 'Store not found', message: `No store found for "${trimmed}". Check the name and try again.` }); return }
       router.push(`/store/${data.store_slug}`)
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not connect. Check your internet and try again.')
+      showAlert({ type: 'error', title: 'Error', message: e?.message ?? 'Could not connect. Check your internet and try again.' })
     } finally { setLoading(false) }
   }
 

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   View, Text, ScrollView, RefreshControl, KeyboardAvoidingView,
   Platform, TouchableOpacity, TextInput, ActivityIndicator,
-  Alert, StyleSheet,
+  StyleSheet,
 } from 'react-native'
+import { useAlert } from '@/components/ui/AlertModal'
 import { useGlobalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -98,6 +99,7 @@ const it = StyleSheet.create({
 export default function CustomerProfileScreen() {
   const router = useRouter()
   const { user, customer, loading: sessionLoading, error, signOut, storeSlug } = useCustomerContext()
+  const { showAlert } = useAlert()
   
   const slug = storeSlug || ''
   console.log('profile: storeSlug from context =', slug)
@@ -154,20 +156,20 @@ export default function CustomerProfileScreen() {
       .update(form)
       .eq('id', customer.id)
     setSaving(false)
-    if (error) { Alert.alert('Error', error.message); return }
+    if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
     setIsEditing(false)
-    Alert.alert('Saved', 'Your profile has been updated.')
+    showAlert({ type: 'success', title: 'Saved', message: 'Your profile has been updated.' })
   }
 
   function handleSignOut() {
-    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => { await signOut(); router.replace(`/store/${slug}`) },
-      },
-    ])
+    showAlert({
+      type: 'confirm',
+      title: 'Sign out',
+      message: 'Are you sure you want to sign out?',
+      confirmText: 'Sign Out',
+      cancelText: 'Cancel',
+      onConfirm: async () => { await signOut(); router.replace(`/store/${slug}`) },
+    })
   }
 
 if (sessionLoading) return <LoadingSpinner fullScreen />

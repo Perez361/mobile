@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Image, Clipboard, Alert, StyleSheet } from 'react-native'
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Image, Clipboard, StyleSheet } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'

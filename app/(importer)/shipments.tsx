@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
-  TextInput, Alert, StyleSheet,
+  TextInput, StyleSheet,
 } from 'react-native'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -11,6 +11,7 @@ import { createImporterClient } from '@/lib/supabase/importer-client'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { getTimeAgo } from '@/lib/utils'
+import { useAlert } from '@/components/ui/AlertModal'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
 type BatchStatus = 'open' | 'received' | 'reconciled'
@@ -23,6 +24,7 @@ const STATUS_COLORS: Record<BatchStatus, { bg: string; text: string }> = {
 export default function ShipmentsScreen() {
   const router = useRouter()
   const { user, importer } = useImporterSession()
+  const { showAlert } = useAlert()
   const [batches, setBatches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -49,18 +51,18 @@ export default function ShipmentsScreen() {
   // TODO: Add real-time updates later
 
   async function createBatch() {
-    if (!batchName.trim()) { Alert.alert('Name required', 'Enter a batch name.'); return }
+    if (!batchName.trim()) { showAlert({ type: 'error', title: 'Name required', message: 'Enter a batch name.' }); return }
     if (!importer) return
     setCreating(true)
     try {
       const { error } = await createImporterClient()
         .from('shipment_batches')
         .insert({ importer_id: importer.id, name: batchName.trim(), shipping_company: company.trim() || null, notes: notes.trim() || null })
-      if (error) { Alert.alert('Error', error.message); return }
+      if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
       setBatchName(''); setCompany(''); setNotes(''); setShowForm(false)
       await fetchBatches()
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Something went wrong.')
+      showAlert({ type: 'error', title: 'Error', message: e?.message ?? 'Something went wrong.' })
     } finally { setCreating(false) }
   }
 

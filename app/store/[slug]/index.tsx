@@ -10,9 +10,9 @@ import {
   Pressable,
   StyleSheet,
   Dimensions,
-  Alert,
   ActivityIndicator,
 } from 'react-native'
+import { useAlert } from '@/components/ui/AlertModal'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -244,6 +244,7 @@ export default function StorefrontScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
   const router = useRouter()
   const { user, customer } = useCustomerContext()
+  const { showAlert } = useAlert()
 
   const [products, setProducts] = useState<Product[]>([])
   const [store, setStore] = useState<Store | null>(null)
@@ -339,14 +340,14 @@ export default function StorefrontScreen() {
 
   async function handleAddToCart(product: Product) {
     if (!user || !customer) {
-      Alert.alert(
-        'Sign in required',
-        'You need to sign in to add items to your cart.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign In', onPress: () => router.push(`/store/${slug}/login`) },
-        ],
-      )
+      showAlert({
+        type: 'confirm',
+        title: 'Sign in required',
+        message: 'You need to sign in to add items to your cart.',
+        confirmText: 'Sign In',
+        cancelText: 'Cancel',
+        onConfirm: () => router.push(`/store/${slug}/login`),
+      })
       return
     }
     const supabase = createCustomerClient(slug)
@@ -387,19 +388,19 @@ export default function StorefrontScreen() {
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   async function handleLogout() {
-    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await createCustomerClient(slug).auth.signOut()
-          setCartCount(0)
-          setCartTotal(0)
-          cartRef.current = { count: 0, total: 0 }
-        },
+    showAlert({
+      type: 'confirm',
+      title: 'Sign out',
+      message: 'Are you sure you want to sign out?',
+      confirmText: 'Sign Out',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        await createCustomerClient(slug).auth.signOut()
+        setCartCount(0)
+        setCartTotal(0)
+        cartRef.current = { count: 0, total: 0 }
       },
-    ])
+    })
   }
 
   // ── Filter ────────────────────────────────────────────────────────────────

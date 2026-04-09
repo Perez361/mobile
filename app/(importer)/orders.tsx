@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect } from 'react'
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
-  TextInput, Linking, Alert, StyleSheet,
+  TextInput, Linking, StyleSheet,
 } from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -11,6 +11,7 @@ import { createImporterClient } from '@/lib/supabase/importer-client'
 import { StatusBadge } from '@/components/ui/Badge'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { useAlert } from '@/components/ui/AlertModal'
 import { formatCurrency, getTimeAgo, getOrderId, parseNumber } from '@/lib/utils'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
@@ -33,7 +34,6 @@ function openWhatsApp(contact: string, message: string) {
   const url = `whatsapp://send?phone=${phone}&text=${encodeURIComponent(message)}`
   Linking.canOpenURL(url).then((ok) => {
     if (ok) Linking.openURL(url)
-    else Alert.alert('WhatsApp not installed', 'Install WhatsApp to send messages.')
   }).catch(() => Linking.openURL(url))
 }
 
@@ -69,6 +69,7 @@ function waShippingReminderMsg(order: any): string {
 
 export default function OrdersScreen() {
   const { user, importer } = useImporterSession()
+  const { showAlert } = useAlert()
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -135,7 +136,7 @@ export default function OrdersScreen() {
     try {
       const { error } = await createImporterClient()
         .from('orders').update({ status: newStatus, ...extra }).eq('id', order.id)
-      if (error) { Alert.alert('Error', error.message); return }
+      if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
       setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: newStatus, ...extra } : o))
       setExpandedId(null)
     } finally { setActionLoading(false) }
@@ -150,7 +151,7 @@ export default function OrdersScreen() {
 
   async function billShipping(order: any) {
     const fee = parseNumber(shippingFee)
-    if (!fee || fee <= 0) { Alert.alert('Enter fee', 'Enter the shipping fee amount.'); return }
+    if (!fee || fee <= 0) { showAlert({ type: 'error', title: 'Enter fee', message: 'Enter the shipping fee amount.' }); return }
     await updateStatus(order, 'shipping_billed', {
       shipping_fee: fee,
       shipping_note: shippingNote || null,
@@ -166,7 +167,7 @@ export default function OrdersScreen() {
         .from('orders')
         .update({ shipping_paid_at: new Date().toISOString() })
         .eq('id', order.id)
-      if (error) { Alert.alert('Error', error.message); return }
+      if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
       setOrders((prev) => prev.map((o) =>
         o.id === order.id ? { ...o, shipping_paid_at: new Date().toISOString() } : o
       ))
@@ -508,14 +509,14 @@ export default function OrdersScreen() {
                   {(order.status === 'pending' || order.status === 'product_paid') && (
                     <TouchableOpacity
                       style={s.cancelBtn}
-                      onPress={() => Alert.alert(
-                        'Cancel Order',
-                        `Cancel order ${getOrderId(order.id)}?`,
-                        [
-                          { text: 'No', style: 'cancel' },
-                          { text: 'Cancel Order', style: 'destructive', onPress: () => updateStatus(order, 'cancelled') },
-                        ]
-                      )}
+                      onPress={() => showAlert({
+                        type: 'confirm',
+                        title: 'Cancel Order',
+                        message: `Cancel order ${getOrderId(order.id)}?`,
+                        confirmText: 'Cancel Order',
+                        cancelText: 'No',
+                        onConfirm: () => updateStatus(order, 'cancelled'),
+                      })}
                     >
                       <Text style={s.cancelBtnText}>Cancel Order</Text>
                     </TouchableOpacity>

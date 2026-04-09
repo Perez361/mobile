@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import {
   View, Text, ScrollView, KeyboardAvoidingView, Platform,
-  TouchableOpacity, Alert, StyleSheet, TextInput, Clipboard,
+  TouchableOpacity, StyleSheet, TextInput, Clipboard,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useImporterSession } from '@/lib/hooks/useImporterSession'
 import { createImporterClient } from '@/lib/supabase/importer-client'
+import { useAlert } from '@/components/ui/AlertModal'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
 // ─── tiny components ─────────────────────────────────────────────────────────
@@ -93,6 +94,7 @@ function PasswordInput({
 export default function SettingsScreen() {
   const router = useRouter()
   const { user, importer } = useImporterSession()
+  const { showAlert } = useAlert()
 
   // ── Profile state ──────────────────────────────────────────────────────────
   const [editing, setEditing] = useState(false)
@@ -449,7 +451,7 @@ export default function SettingsScreen() {
                 </View>
                 <TouchableOpacity
                   style={s.deleteBtn}
-                  onPress={() => Alert.alert('Delete Account', 'To delete your account please contact support.')}
+                  onPress={() => showAlert({ type: 'info', title: 'Delete Account', message: 'To delete your account please contact support.' })}
                 >
                   <Text style={s.deleteBtnText}>Delete</Text>
                 </TouchableOpacity>

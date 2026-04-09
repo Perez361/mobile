@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   View, Text, ScrollView, KeyboardAvoidingView, Platform,
-  Alert, TouchableOpacity, StyleSheet,
+  TouchableOpacity, StyleSheet,
 } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useForm, Controller } from 'react-hook-form'
@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { ImagePickerField } from '@/components/ui/ImagePickerField'
+import { useAlert } from '@/components/ui/AlertModal'
 import { slugify } from '@/lib/utils'
 import { Colors, FontSize, Spacing } from '@/constants/theme'
 
@@ -36,6 +37,7 @@ export default function EditProductScreen() {
   const [fetching, setFetching] = useState(true)
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const { showAlert } = useAlert()
 
   const { control, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -77,10 +79,10 @@ export default function EditProductScreen() {
           supplier_url:    data.supplier_url || null,
         })
         .eq('id', id).eq('importer_id', importer.id)
-      if (error) { Alert.alert('Error', error.message); return }
+      if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
       router.back()
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Something went wrong.')
+      showAlert({ type: 'error', title: 'Error', message: e?.message ?? 'Something went wrong.' })
     } finally { setLoading(false) }
   }
 

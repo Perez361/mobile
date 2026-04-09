@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, StyleSheet, Alert } from 'react-native'
+import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, StyleSheet } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { createImporterClient } from '@/lib/supabase/importer-client'
+import { useAlert } from '@/components/ui/AlertModal'
 import { slugify } from '@/lib/utils'
 import { Colors, FontSize, Spacing } from '@/constants/theme'
 
@@ -24,6 +25,7 @@ export default function RegisterScreen() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
+  const { showAlert } = useAlert()
 
   async function onSubmit(data: FormData) {
     setLoading(true)
@@ -41,12 +43,16 @@ export default function RegisterScreen() {
           },
         },
       })
-      if (error) { Alert.alert('Registration failed', error.message); return }
-      Alert.alert('Account created', 'Check your email to confirm your account, then sign in.', [
-        { text: 'OK', onPress: () => router.replace('/(auth)/login') },
-      ])
+      if (error) { showAlert({ type: 'error', title: 'Registration failed', message: error.message }); return }
+      showAlert({
+        type: 'success',
+        title: 'Account created',
+        message: 'Check your email to confirm your account, then sign in.',
+        confirmText: 'OK',
+        onConfirm: () => router.replace('/(auth)/login'),
+      })
     } catch (e: any) {
-      Alert.alert('Registration failed', e?.message ?? 'Something went wrong. Please try again.')
+      showAlert({ type: 'error', title: 'Registration failed', message: e?.message ?? 'Something went wrong. Please try again.' })
     } finally {
       setLoading(false)
     }

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
-  TextInput, Image, Alert, Linking, StyleSheet,
+  TextInput, Image, Linking, StyleSheet,
 } from 'react-native'
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -10,6 +10,7 @@ import { useImporterSession } from '@/lib/hooks/useImporterSession'
 import { createImporterClient } from '@/lib/supabase/importer-client'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { StatusBadge } from '@/components/ui/Badge'
+import { useAlert } from '@/components/ui/AlertModal'
 import { formatCurrency, parseNumber, getOrderId } from '@/lib/utils'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
@@ -24,7 +25,7 @@ function monthLabel(key: string) {
 function openWhatsApp(contact: string, message: string) {
   const phone = '233' + contact.replace(/^0/, '').replace(/\D/g, '')
   const url = `whatsapp://send?phone=${phone}&text=${encodeURIComponent(message)}`
-  Linking.openURL(url).catch(() => Alert.alert('WhatsApp not installed'))
+  Linking.openURL(url).catch(() => {})
 }
 
 function productInvoiceMsg(customer: any, items: any[], month: string): string {
@@ -72,6 +73,7 @@ export default function PreOrderMonthScreen() {
   const router = useRouter()
   const { month } = useLocalSearchParams<{ month: string }>()
   const { user, importer } = useImporterSession()
+  const { showAlert } = useAlert()
 
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([])
   const [loading, setLoading] = useState(true)
@@ -172,7 +174,7 @@ export default function PreOrderMonthScreen() {
     try {
       const { error } = await createImporterClient()
         .from('products').update({ tracking_number: val || null }).eq('id', productId)
-      if (error) { Alert.alert('Error', error.message); return }
+      if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
       setProductGroups((prev) => prev.map((g) =>
         g.productId === productId ? { ...g, trackingNumber: val || null } : g
       ))
@@ -181,7 +183,7 @@ export default function PreOrderMonthScreen() {
 
   async function billShippingAll(productId: string) {
     const fee = parseNumber(shippingFeeInputs[productId])
-    if (!fee || fee <= 0) { Alert.alert('Enter fee', 'Enter a shipping fee amount.'); return }
+    if (!fee || fee <= 0) { showAlert({ type: 'error', title: 'Enter fee', message: 'Enter a shipping fee amount.' }); return }
     const note = (shippingNoteInputs[productId] || '').trim() || null
     const group = productGroups.find((g) => g.productId === productId)
     if (!group) return
@@ -190,7 +192,7 @@ export default function PreOrderMonthScreen() {
       .filter((e) => e.status === 'arrived')
       .map((e) => e.orderId)
 
-    if (orderIds.length === 0) { Alert.alert('None to bill', 'No arrived orders to bill.'); return }
+    if (orderIds.length === 0) { showAlert({ type: 'error', title: 'None to bill', message: 'No arrived orders to bill.' }); return }
 
     setBillingProduct(productId)
     try {
@@ -203,14 +205,14 @@ export default function PreOrderMonthScreen() {
           shipping_billed_at: new Date().toISOString(),
         })
         .in('id', orderIds)
-      if (error) { Alert.alert('Error', error.message); return }
+      if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
       await fetchData()
     } finally { setBillingProduct(null) }
   }
 
   async function billShippingSingle(orderId: string, productId: string) {
     const fee = parseNumber(shippingFeeInputs[productId])
-    if (!fee || fee <= 0) { Alert.alert('Enter fee', 'Enter a shipping fee amount first.'); return }
+    if (!fee || fee <= 0) { showAlert({ type: 'error', title: 'Enter fee', message: 'Enter a shipping fee amount first.' }); return }
     const note = (shippingNoteInputs[productId] || '').trim() || null
     setBillingProduct(orderId)
     try {
@@ -223,7 +225,7 @@ export default function PreOrderMonthScreen() {
           shipping_billed_at: new Date().toISOString(),
         })
         .eq('id', orderId)
-      if (error) { Alert.alert('Error', error.message); return }
+      if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
       await fetchData()
     } finally { setBillingProduct(null) }
   }
@@ -233,7 +235,7 @@ export default function PreOrderMonthScreen() {
       .from('orders')
       .update({ status: 'delivered', shipping_paid_at: new Date().toISOString() })
       .eq('id', orderId)
-    if (error) Alert.alert('Error', error.message)
+    if (error) showAlert({ type: 'error', title: 'Error', message: error.message })
     else await fetchData()
   }
 
@@ -472,14 +474,14 @@ export default function PreOrderMonthScreen() {
                           {e.status === 'shipping_paid' && (
                             <TouchableOpacity
                               style={s.deliverBtn}
-                              onPress={() => Alert.alert(
-                                'Mark as Delivered',
-                                `Mark ${name}'s order as delivered?`,
-                                [
-                                  { text: 'Cancel', style: 'cancel' },
-                                  { text: 'Delivered', onPress: () => markDelivered(e.orderId) },
-                                ]
-                              )}
+                              onPress={() => showAlert({
+                                type: 'confirm',
+                                title: 'Mark as Delivered',
+                                message: `Mark ${name}'s order as delivered?`,
+                                confirmText: 'Delivered',
+                                cancelText: 'Cancel',
+                                onConfirm: () => markDelivered(e.orderId),
+                              })}
                             >
                               <Text style={s.deliverBtnText}>Mark Delivered</Text>
                             </TouchableOpacity>

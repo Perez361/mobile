@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   View, Text, ScrollView, KeyboardAvoidingView, Platform,
-  Alert, TouchableOpacity, StyleSheet,
+  TouchableOpacity, StyleSheet,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useForm, Controller } from 'react-hook-form'
@@ -14,6 +14,7 @@ import { createImporterClient } from '@/lib/supabase/importer-client'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { ImagePickerField } from '@/components/ui/ImagePickerField'
+import { useAlert } from '@/components/ui/AlertModal'
 import { slugify } from '@/lib/utils'
 import { Colors, FontSize, Spacing } from '@/constants/theme'
 
@@ -33,6 +34,7 @@ export default function NewProductScreen() {
   const { user, importer } = useImporterSession()
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const { showAlert } = useAlert()
 
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -58,10 +60,10 @@ export default function NewProductScreen() {
         supplier_name: data.supplier_name || null,
         supplier_url: data.supplier_url || null,
       })
-      if (error) { Alert.alert('Error', error.message); return }
+      if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
       router.back()
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Something went wrong.')
+      showAlert({ type: 'error', title: 'Error', message: e?.message ?? 'Something went wrong.' })
     } finally { setLoading(false) }
   }
 

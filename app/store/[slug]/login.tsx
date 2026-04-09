@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, Alert, StyleSheet } from 'react-native'
+import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, StyleSheet } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { createCustomerClient } from '@/lib/supabase/customer-client'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { useAlert } from '@/components/ui/AlertModal'
 import { Colors, FontSize, Spacing } from '@/constants/theme'
 
 const schema = z.object({
@@ -21,15 +22,16 @@ export default function CustomerLoginScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
   const [loading, setLoading] = useState(false)
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({ resolver: zodResolver(schema) })
+  const { showAlert } = useAlert()
 
   async function onSubmit(data: FormData) {
     setLoading(true)
     try {
       const { error } = await createCustomerClient(slug).auth.signInWithPassword({ email: data.email, password: data.password })
-      if (error) { Alert.alert('Login failed', error.message); return }
+      if (error) { showAlert({ type: 'error', title: 'Login failed', message: error.message }); return }
       router.replace(`/store/${slug}`)
     } catch (e: any) {
-      Alert.alert('Login failed', e?.message ?? 'Something went wrong. Please try again.')
+      showAlert({ type: 'error', title: 'Login failed', message: e?.message ?? 'Something went wrong. Please try again.' })
     } finally { setLoading(false) }
   }
 

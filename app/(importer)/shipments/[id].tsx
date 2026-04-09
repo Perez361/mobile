@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity,
-  TextInput, Alert, StyleSheet, Modal, FlatList,
+  TextInput, StyleSheet, Modal, FlatList,
 } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useImporterSession } from '@/lib/hooks/useImporterSession'
 import { createImporterClient } from '@/lib/supabase/importer-client'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { useAlert } from '@/components/ui/AlertModal'
 import { formatCurrency } from '@/lib/utils'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
@@ -16,6 +17,7 @@ export default function ShipmentBatchScreen() {
   const router = useRouter()
   const { id: batchId } = useLocalSearchParams<{ id: string }>()
   const { importer } = useImporterSession()
+  const { showAlert } = useAlert()
 
   const [batch, setBatch] = useState<any>(null)
   const [shipmentItems, setShipmentItems] = useState<any[]>([])
@@ -84,7 +86,7 @@ export default function ShipmentBatchScreen() {
 
   const addShipmentItem = async () => {
     if (!selectedProduct || !trackingNumber.trim()) {
-      Alert.alert('Error', 'Please select a product and enter a tracking number')
+      showAlert({ type: 'error', title: 'Error', message: 'Please select a product and enter a tracking number' })
       return
     }
 
@@ -102,18 +104,18 @@ export default function ShipmentBatchScreen() {
 
       if (error) {
         console.error('Add item error:', error)
-        Alert.alert('Error', error.message)
+        showAlert({ type: 'error', title: 'Error', message: error.message })
         return
       }
 
-      Alert.alert('Success', 'Item added to shipment')
+      showAlert({ type: 'success', title: 'Success', message: 'Item added to shipment' })
       setShowAddModal(false)
       setSelectedProduct(null)
       setTrackingNumber('')
       fetchData() // Refresh data
     } catch (err: any) {
       console.error('Add item error:', err)
-      Alert.alert('Error', err.message || 'Failed to add item')
+      showAlert({ type: 'error', title: 'Error', message: err.message || 'Failed to add item' })
     } finally {
       setAdding(false)
     }
@@ -130,7 +132,7 @@ export default function ShipmentBatchScreen() {
 
       if (error) {
         console.error('Update status error:', error)
-        Alert.alert('Error', error.message)
+        showAlert({ type: 'error', title: 'Error', message: error.message })
         return
       }
 
@@ -142,7 +144,7 @@ export default function ShipmentBatchScreen() {
       )
     } catch (err: any) {
       console.error('Update status error:', err)
-      Alert.alert('Error', err.message || 'Failed to update status')
+      showAlert({ type: 'error', title: 'Error', message: err.message || 'Failed to update status' })
     }
   }
 

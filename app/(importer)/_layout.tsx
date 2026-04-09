@@ -50,7 +50,7 @@ export default function ImporterLayout() {
       <Tabs.Screen
         name="products"
         options={{
-          tabBarLabel: 'Shop',
+          tabBarLabel: 'Products',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'cube' : 'cube-outline'} size={22} color={color} />
           ),

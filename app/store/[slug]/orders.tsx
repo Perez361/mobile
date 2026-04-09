@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
-  TextInput, ActivityIndicator, Image, StyleSheet, Alert,
+  TextInput, ActivityIndicator, Image, StyleSheet,
 } from 'react-native'
+import { useAlert } from '@/components/ui/AlertModal'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -103,7 +104,7 @@ function OrderCard({
 
   async function handlePay() {
     if (!momoNumber.trim() || !reference.trim()) {
-      Alert.alert('Missing info', 'Enter your MoMo number and transaction reference.')
+      showAlert({ type: 'error', title: 'Missing info', message: 'Enter your MoMo number and transaction reference.' })
       return
     }
     setPaying(true)
@@ -112,35 +113,31 @@ function OrderCard({
       .update({ momo_number: momoNumber.trim(), payment_reference: reference.trim(), status: 'shipping_paid' })
       .eq('id', order.id)
     setPaying(false)
-    if (error) { Alert.alert('Error', error.message); return }
-    Alert.alert('Payment submitted', 'The importer will verify your payment and arrange delivery.')
+    if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
+    showAlert({ type: 'success', title: 'Payment submitted', message: 'The importer will verify your payment and arrange delivery.' })
     onUpdate(order.id, { status: 'shipping_paid', momo_number: momoNumber, payment_reference: reference })
   }
 
   async function handleCancel() {
-    Alert.alert(
-      'Cancel order?',
-      'This cannot be undone. Your order will be marked as cancelled.',
-      [
-        { text: 'Keep order', style: 'cancel' },
-        {
-          text: 'Yes, cancel',
-          style: 'destructive',
-          onPress: async () => {
-            setCancelling(true)
-            const { error } = await createCustomerClient(slug)
-              .from('orders')
-              .update({ status: 'cancelled' })
-              .eq('id', order.id)
-              .eq('status', 'pending')
-            setCancelling(false)
-            if (error) { Alert.alert('Error', error.message); return }
-            onUpdate(order.id, { status: 'cancelled' })
-            setExpanded(false)
-          },
-        },
-      ],
-    )
+    showAlert({
+      type: 'confirm',
+      title: 'Cancel order?',
+      message: 'This cannot be undone. Your order will be marked as cancelled.',
+      confirmText: 'Yes, cancel',
+      cancelText: 'Keep order',
+      onConfirm: async () => {
+        setCancelling(true)
+        const { error } = await createCustomerClient(slug)
+          .from('orders')
+          .update({ status: 'cancelled' })
+          .eq('id', order.id)
+          .eq('status', 'pending')
+        setCancelling(false)
+        if (error) { showAlert({ type: 'error', title: 'Error', message: error.message }); return }
+        onUpdate(order.id, { status: 'cancelled' })
+        setExpanded(false)
+      },
+    })
   }
 
   return (
@@ -373,7 +370,7 @@ function MonthGroupCard({
 
   async function handlePayAll() {
     if (!momoNumber.trim() || !reference.trim()) {
-      Alert.alert('Missing info', 'Enter your MoMo number and transaction reference.')
+      showAlert({ type: 'error', title: 'Missing info', message: 'Enter your MoMo number and transaction reference.' })
       return
     }
     setPaying(true)
@@ -384,14 +381,14 @@ function MonthGroupCard({
         .update({ momo_number: momoNumber.trim(), payment_reference: reference.trim(), status: 'shipping_paid' })
         .eq('id', order.id)
       if (error) {
-        Alert.alert('Error', `Payment failed for order #${order.id.slice(-6)}: ${error.message}`)
+        showAlert({ type: 'error', title: 'Error', message: `Payment failed for order #${order.id.slice(-6)}: ${error.message}` })
       } else {
         handleUpdate(order.id, { status: 'shipping_paid', momo_number: momoNumber, payment_reference: reference })
       }
     }
     
     setPaying(false)
-    Alert.alert('Payment submitted', `Shipping payment submitted for ${shippingBilledOrders.length} order${shippingBilledOrders.length > 1 ? 's' : ''}! The importer will verify and deliver your orders.`)
+    showAlert({ type: 'success', title: 'Payment submitted', message: `Shipping payment submitted for ${shippingBilledOrders.length} order${shippingBilledOrders.length > 1 ? 's' : ''}! The importer will verify and deliver your orders.` })
     setMomoNumber('')
     setReference('')
   }
@@ -513,6 +510,7 @@ function MonthGroupCard({
 export default function CustomerOrdersScreen() {
   const { user, customer, loading: sessionLoading, error, storeSlug } = useCustomerContext()
   const router = useRouter()
+  const { showAlert } = useAlert()
   const [orders, setOrders] = useState<Order[]>([])
   const [refreshing, setRefreshing] = useState(false)
   

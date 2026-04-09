@@ -1,8 +1,9 @@
-import { View, Text, TouchableOpacity, ScrollView, Alert, StyleSheet } from 'react-native'
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useImporterSession } from '@/lib/hooks/useImporterSession'
+import { useAlert } from '@/components/ui/AlertModal'
 import { Colors, FontSize, Spacing } from '@/constants/theme'
 
 type IconName = React.ComponentProps<typeof Ionicons>['name']
@@ -20,24 +21,25 @@ const MENU: MenuItem[] = [
 export default function MoreScreen() {
   const router = useRouter()
   const { importer, user, signOut } = useImporterSession()
+  const { showAlert } = useAlert()
 
   async function handleSignOut() {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out', style: 'destructive', onPress: async () => {
-          try {
-            await signOut()
-            // Immediately redirect to login page
-            router.replace('/')
-          } catch (error) {
-            console.error('Sign out error:', error)
-            // Force redirect even if sign out fails
-            router.replace('/')
-          }
-        },
+    showAlert({
+      type: 'confirm',
+      title: 'Sign Out',
+      message: 'Are you sure you want to sign out?',
+      confirmText: 'Sign Out',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await signOut()
+          router.replace('/(auth)/login')
+        } catch (error) {
+          console.error('Sign out error:', error)
+          router.replace('/(auth)/login')
+        }
       },
-    ])
+    })
   }
 
   return (
