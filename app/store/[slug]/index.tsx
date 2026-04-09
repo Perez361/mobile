@@ -124,19 +124,19 @@ function ProductCard({
         {product.description ? (
           <Text style={s.cardDesc} numberOfLines={1}>{product.description}</Text>
         ) : null}
-        {product.shipping_tag ? (
-          <View style={s.shippingRow}>
-            <Ionicons name="airplane-outline" size={11} color={Colors.textMuted} />
-            <Text style={s.shippingText} numberOfLines={1}>{product.shipping_tag}</Text>
-          </View>
-        ) : null}
 
         <View style={s.cardFooter}>
-          <View>
+          <View style={s.priceContainer}>
             <Text style={s.priceLabel}>Price</Text>
             <Text style={[s.price, { color: theme.priceColor }]}>
               GH₵{parseNumber(product.price).toLocaleString('en-GH', { maximumFractionDigits: 0 })}
             </Text>
+            {product.shipping_tag ? (
+              <View style={s.shippingRowSmall}>
+                <Ionicons name="boat-outline" size={8} color={Colors.textMuted} />
+                <Text style={s.shippingTextSmall}>{product.shipping_tag.toLowerCase()}</Text>
+              </View>
+            ) : null}
           </View>
           <Pressable
             onPress={handlePress}
@@ -199,11 +199,11 @@ function HeroSection({
           </Text>
         </View>
 
-        {/* Auth pill */}
+        {/* Store icon */}
         {isLoggedIn ? (
-          <TouchableOpacity style={s.authPill} onPress={onLogout}>
-            <Ionicons name="log-out-outline" size={14} color="rgba(255,255,255,0.8)" />
-          </TouchableOpacity>
+          <View style={s.storeIcon}>
+            <Ionicons name="storefront-outline" size={32} color="rgba(255,255,255,0.8)" />
+          </View>
         ) : (
           <TouchableOpacity
             style={[s.authPill, { backgroundColor: theme.accent + '22', borderColor: theme.accent + '44' }]}
@@ -552,6 +552,7 @@ const s = StyleSheet.create({
   heroTagline: { fontSize: FontSize.xs, color: 'rgba(255,255,255,0.55)', marginTop: Spacing.sm, lineHeight: 17 },
   authPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: Spacing.md, paddingVertical: 7, borderRadius: Radius.full, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', marginTop: 2 },
   authPillText: { fontSize: FontSize.xs, fontWeight: '700' },
+  storeIcon: { marginTop: 2 },
   heroPills: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.lg },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.full, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   pillText: { fontSize: FontSize.xs, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
@@ -584,7 +585,11 @@ const s = StyleSheet.create({
   cardDesc: { fontSize: FontSize.xs, color: Colors.textMuted, lineHeight: 15 },
   shippingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   shippingText: { fontSize: FontSize.xs, color: Colors.textMuted, flex: 1 },
+  shippingTextOnly: { fontSize: 9, color: Colors.textMuted, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 },
+  shippingRowSmall: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2 },
+  shippingTextSmall: { fontSize: 8, color: Colors.textMuted, flexShrink: 0 },
   cardFooter: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 4 },
+  priceContainer: { flex: 1, marginRight: 8 },
   priceLabel: { fontSize: 9, color: Colors.textMuted, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
   price: { fontSize: FontSize.md, fontWeight: '900' },
   addBtn: { width: 34, height: 34, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },

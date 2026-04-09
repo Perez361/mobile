@@ -55,7 +55,7 @@ export default function NewProductScreen() {
         price: Number(data.price),
         description: data.description || null,
         image_url: imageUrl || null,
-        shipping_tag: data.shipping_tag || null,
+        shipping_tag: data.shipping_tag || 'without shipping fee',
         tracking_number: data.tracking_number || null,
         supplier_name: data.supplier_name || null,
         supplier_url: data.supplier_url || null,

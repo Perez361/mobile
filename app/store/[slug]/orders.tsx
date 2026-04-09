@@ -86,6 +86,7 @@ function OrderCard({
   slug: string
   onUpdate: (id: string, patch: Partial<Order>) => void
 }) {
+  const { showAlert } = useAlert()
   const [expanded, setExpanded] = useState(false)
   const [momoNumber, setMomoNumber] = useState(order.momo_number || '')
   const [reference, setReference] = useState(order.payment_reference || '')
@@ -349,6 +350,7 @@ function MonthGroupCard({
   slug: string
   onUpdate: (id: string, patch: Partial<Order>) => void
 }) {
+  const { showAlert } = useAlert()
   const [open, setOpen] = useState(true)
   const [orders, setOrders] = useState(group.orders)
 

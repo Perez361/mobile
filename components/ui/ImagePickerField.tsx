@@ -2,7 +2,7 @@
  * ImagePickerField — pick from library or camera, upload to Supabase Storage
  * bucket: 'product-images', path: '{userId}/{uuid}.{ext}'
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   View, Text, TouchableOpacity, ActivityIndicator,
   StyleSheet,
@@ -25,11 +25,29 @@ interface Props {
 export function ImagePickerField({ value, userId, onUpload, error }: Props) {
   const [uploading, setUploading] = useState(false)
   const [localPreview, setLocalPreview] = useState<string | null>(null)
+  const [uploadUrl, setUploadUrl] = useState<string | null>(null)
+  const [cacheKey, setCacheKey] = useState<string>('')
   const { showAlert } = useAlert()
 
-  // Show localPreview while uploading for instant feedback.
-  // Once upload succeeds we clear it and fall through to the remote `value`.
-  const displayValue = localPreview ?? value ?? undefined
+  useEffect(() => {
+    if (value) setCacheKey(Date.now().toString() + '-' + Math.random().toString(36).slice(2))
+  }, [value])
+
+  // While uploading: show the local URI for instant feedback.
+  // Once upload finishes: onUpload() is called first (parent gets the URL),
+  // then localPreview is cleared — so there's never a blank frame.
+  // FIX: Delay clear until parent value or uploadUrl is set
+  useEffect(() => {
+    if (!uploading && uploadUrl && value) {
+      console.log('✅ ImagePicker: Clearing localPreview, value now:', value)
+      setLocalPreview(null)
+      setUploadUrl(null)
+    }
+  }, [uploading, value, uploadUrl])
+
+  const displayValue = localPreview ?? value ?? uploadUrl ?? undefined
+
+  const imageLogValue = displayValue ?? undefined
 
   async function requestPermission(source: 'library' | 'camera') {
     if (source === 'camera') {
@@ -59,14 +77,14 @@ export function ImagePickerField({ value, userId, onUpload, error }: Props) {
 
     const asset = result.assets[0]
 
-    // Show the original picker URI as an optimistic preview while upload runs
+    // Show the local picker URI as an optimistic preview while upload runs
     setLocalPreview(asset.uri)
     setUploading(true)
 
     try {
       await uploadImage(asset.uri, asset.mimeType ?? 'image/jpeg')
     } catch {
-      // Upload failed — clear the optimistic preview so we don't show a dead URI
+      // Upload failed — clear the optimistic preview
       setLocalPreview(null)
     } finally {
       setUploading(false)
@@ -76,36 +94,77 @@ export function ImagePickerField({ value, userId, onUpload, error }: Props) {
   async function uploadImage(uri: string, mimeType: string) {
     const supabase = createImporterClient()
 
-    // Compress: resize to max 1200px wide, JPEG at 80% quality.
-    // This typically cuts file size by 60–80% vs the raw picker output.
+    // Compress: resize to max 1200px wide, JPEG at 80% quality
     const compressed = await ImageManipulator.manipulateAsync(
       uri,
       [{ resize: { width: 1200 } }],
-      { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     )
 
-    const response = await fetch(compressed.uri)
-    if (!response.ok) throw new Error('Failed to read compressed image')
-    const blob = await response.blob()
+    if (!compressed.base64) {
+      throw new Error('Failed to compress image')
+    }
+
+    const base64Data = compressed.base64
+    console.log('📤 Compressed base64 size:', base64Data.length)
+
+    // Decode base64 to binary
+    const binaryString = atob(base64Data)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
 
     const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
 
-    const { error: uploadError } = await supabase.storage
+    // Try upload with Uint8Array first
+    let uploadResult = await supabase.storage
       .from('product-images')
-      .upload(fileName, blob, { contentType: 'image/jpeg' })
+      .upload(fileName, bytes, { contentType: 'image/jpeg' })
 
-    if (uploadError) {
+    // Fallback to FormData if Uint8Array fails
+    if (uploadResult.error) {
+      console.log('📤 Uint8Array upload failed, trying FormData...')
+      const supabaseUrl = (supabase as any).supabaseUrl ?? 'https://mhlkxsncvohiuquthcum.supabase.co'
+
+      const formData = new FormData()
+      formData.append('file', { uri: `data:image/jpeg;base64,${base64Data}`, type: 'image/jpeg', name: fileName } as any, fileName)
+
+      // Use fetch directly for FormData upload
+      const response = await fetch(
+        `${supabaseUrl}/storage/v1/object/product-images/${fileName}`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+          },
+          body: formData,
+        }
+      )
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Upload failed: ${response.status} - ${errorText}`)
+      }
+      uploadResult = { data: { id: '', path: fileName, fullPath: fileName }, error: null }
+    }
+
+    // Check for final error
+    const uploadError = (uploadResult as any).error
+    if (uploadError != null) {
       showAlert({ type: 'error', title: 'Upload failed', message: uploadError.message })
       throw uploadError
     }
 
     const { data } = supabase.storage.from('product-images').getPublicUrl(fileName)
+    console.log('📤 ImagePicker: Upload success, publicUrl:', data.publicUrl)
 
-    // Clear local preview BEFORE calling onUpload so that when the parent
-    // sets `value` to the public URL, displayValue immediately shows the
-    // remote URL with no stale local URI in the way.
-    setLocalPreview(null)
+    // Call onUpload FIRST so parent receives URL and updates value
+    // This triggers the useEffect to update cacheKey for the Image component
     onUpload(data.publicUrl)
+    
+    // Store uploadUrl for local fallback, clear happens via useEffect when value updates
+    setUploadUrl(data.publicUrl)
   }
 
   async function removeImage() {
@@ -137,11 +196,18 @@ export function ImagePickerField({ value, userId, onUpload, error }: Props) {
       {displayValue ? (
         <View style={s.preview}>
           <Image
-            source={{ uri: displayValue }}
+            source={{
+              uri: displayValue,
+              cacheKey: displayValue.startsWith('http')
+                ? `${displayValue}?t=${cacheKey}`
+                : displayValue
+            }}
             style={s.image}
             contentFit="cover"
             transition={200}
-            cachePolicy="none"
+            cachePolicy={displayValue.startsWith('http') ? 'disk' : 'memory'}
+            onError={(e) => console.error('❌ Image load ERROR:', imageLogValue, e)}
+            onLoadEnd={() => console.log('✅ Image load END:', imageLogValue)}
           />
           {uploading && (
             <View style={s.imageOverlay}>
