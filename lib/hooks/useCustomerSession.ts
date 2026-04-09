@@ -34,15 +34,17 @@ export function useCustomerSession(slug: string) {
       timeout
     ]).then(async ({ data: { session } }) => {
       if (settled) return
+      if (!slug) { setLoading(false); return }
       setSession(session)
       setUser(session?.user ?? null)
-      if (session?.user) {
+      if (session?.user && slug) {
         await fetchCustomer(session.user.id, slug)
       } else {
         setLoading(false)
       }
     }).catch(async (err: any) => {
       if (settled) return
+      if (!slug) { setLoading(false); return }
 
       // Handle invalid refresh token by clearing stored session
       if (err instanceof Error && (
@@ -72,7 +74,7 @@ export function useCustomerSession(slug: string) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session)
       setUser(session?.user ?? null)
-      if (session?.user) {
+      if (session?.user && slug) {
         try {
           await fetchCustomer(session.user.id, slug)
         } catch (err: any) {
@@ -100,23 +102,25 @@ export function useCustomerSession(slug: string) {
   }, [slug])
 
   async function fetchCustomer(userId: string, storeSlug: string): Promise<void> {
+    if (!storeSlug) { setLoading(false); return }
+    const safeSlug = storeSlug as string
     try {
       setLoading(true)
 
       // Cache importer ID
-      let importerId = importerCache.current.get(storeSlug)
+      let importerId = importerCache.current.get(safeSlug)
       if (!importerId) {
         // Define timeout promise for lookup
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Store lookup timeout')), 3000)
         )
 
-        const supabase = createCustomerClient(storeSlug)
+        const supabase = createCustomerClient(safeSlug)
         const { data: imp, error } = await Promise.race([
           supabase
             .from('importers')
             .select('id')
-            .ilike('store_slug', storeSlug)
+            .ilike('store_slug', safeSlug)
             .single(),
           timeoutPromise
         ])
@@ -124,17 +128,17 @@ export function useCustomerSession(slug: string) {
         if (error) throw error
         if (!imp) throw new Error('Store not found')
         
-        importerId = imp.id
-        importerCache.current.set(storeSlug, importerId)
+        importerId = imp.id as string
+        importerCache.current.set(safeSlug, importerId)
       }
 
       // Fetch customer
-      const supabase = createCustomerClient(storeSlug)
+      const supabase = createCustomerClient(safeSlug)
       const { data, error } = await supabase
         .from('customers')
         .select('*')
         .eq('user_id', userId)
-        .eq('store_id', importerId)
+        .eq('store_id', importerId as string)
         .single()
 
       if (error) throw error

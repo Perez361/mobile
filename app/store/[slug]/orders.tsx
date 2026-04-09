@@ -364,6 +364,38 @@ function MonthGroupCard({
   const totalShipping = orders.reduce((s: number, o: Order) => s + nv(o.shipping_fee), 0)
   const grandTotal = totalProducts + totalShipping
 
+  // For bulk shipping payment
+  const shippingBilledOrders = orders.filter(o => o.status === 'shipping_billed')
+  const totalShippingDue = shippingBilledOrders.reduce((s: number, o: Order) => s + nv(o.shipping_fee), 0)
+  const [momoNumber, setMomoNumber] = useState('')
+  const [reference, setReference] = useState('')
+  const [paying, setPaying] = useState(false)
+
+  async function handlePayAll() {
+    if (!momoNumber.trim() || !reference.trim()) {
+      Alert.alert('Missing info', 'Enter your MoMo number and transaction reference.')
+      return
+    }
+    setPaying(true)
+    
+    for (const order of shippingBilledOrders) {
+      const { error } = await createCustomerClient(slug)
+        .from('orders')
+        .update({ momo_number: momoNumber.trim(), payment_reference: reference.trim(), status: 'shipping_paid' })
+        .eq('id', order.id)
+      if (error) {
+        Alert.alert('Error', `Payment failed for order #${order.id.slice(-6)}: ${error.message}`)
+      } else {
+        handleUpdate(order.id, { status: 'shipping_paid', momo_number: momoNumber, payment_reference: reference })
+      }
+    }
+    
+    setPaying(false)
+    Alert.alert('Payment submitted', `Shipping payment submitted for ${shippingBilledOrders.length} order${shippingBilledOrders.length > 1 ? 's' : ''}! The importer will verify and deliver your orders.`)
+    setMomoNumber('')
+    setReference('')
+  }
+
   return (
     <View style={mg.card}>
       {/* Month header */}
@@ -390,6 +422,62 @@ function MonthGroupCard({
           {orders.map(order => (
             <OrderCard key={order.id} order={order} slug={slug} onUpdate={handleUpdate} />
           ))}
+
+          {/* Bulk shipping payment */}
+          {shippingBilledOrders.length > 0 && totalShippingDue > 0 && (
+            <View style={mg.paymentBox}>
+              <View style={mg.paymentHeader}>
+                <Ionicons name="alert-circle-outline" size={18} color="#C2410C" />
+                <View style={{ flex: 1 }}>
+                  <Text style={mg.paymentTitle}>
+                    {shippingBilledOrders.length} order{shippingBilledOrders.length > 1 ? 's' : ''} awaiting shipping — Total: GH₵{totalShippingDue.toLocaleString('en-GH', { maximumFractionDigits: 0 })}
+                  </Text>
+                  <Text style={mg.paymentSub}>
+                    Your items have arrived! Pay the shipping fee via MoMo to receive your orders.
+                  </Text>
+                </View>
+              </View>
+              <View style={mg.paymentFields}>
+                <View>
+                  <Text style={mg.fieldLabel}>Your MoMo Number</Text>
+                  <TextInput
+                    style={mg.fieldInput}
+                    value={momoNumber}
+                    onChangeText={setMomoNumber}
+                    placeholder="e.g. 0551234567"
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+                <View>
+                  <Text style={mg.fieldLabel}>Transaction Reference</Text>
+                  <TextInput
+                    style={mg.fieldInput}
+                    value={reference}
+                    onChangeText={setReference}
+                    placeholder="e.g. ABC123456"
+                    placeholderTextColor={Colors.textMuted}
+                    autoCapitalize="characters"
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[mg.payBtn, paying && { opacity: 0.6 }]}
+                  onPress={handlePayAll}
+                  disabled={paying}
+                  activeOpacity={0.85}
+                >
+                  {paying
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : (
+                      <>
+                        <Ionicons name="send-outline" size={15} color="#fff" />
+                        <Text style={mg.payBtnText}>Pay GH₵{totalShippingDue.toLocaleString('en-GH', { maximumFractionDigits: 0 })} for {shippingBilledOrders.length} Order{shippingBilledOrders.length > 1 ? 's' : ''}</Text>
+                      </>
+                    )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {/* Month totals */}
           <View style={mg.summary}>
@@ -423,15 +511,42 @@ function MonthGroupCard({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function CustomerOrdersScreen() {
-const { slug } = useLocalSearchParams<{ slug: string }>()
+  const { user, customer, loading: sessionLoading, error, storeSlug } = useCustomerContext()
   const router = useRouter()
-  const { user, customer, loading: sessionLoading, error } = useCustomerContext()
   const [orders, setOrders] = useState<Order[]>([])
   const [refreshing, setRefreshing] = useState(false)
+  
+  const slug = storeSlug || ''
+  console.log('orders: storeSlug from context =', slug)
 
   const fetchOrders = useCallback(async () => {
-    if (!slug || !customer) return
-    const { data } = await createCustomerClient(slug)
+    console.log('orders: slug from params =', slug)
+    console.log('fetchOrders: slug=', slug, 'customer=', customer?.id)
+    if (!slug || !customer) {
+      console.log('fetchOrders: skipping - slug=', slug, 'customer=', customer ? customer.id : null)
+      return
+    }
+    console.log('fetching orders for customer:', customer.id)
+    
+    // Check if there are ANY orders for this store (to verify RLS allows some access)
+    const { count, error: countError } = await createCustomerClient(slug)
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('store_id', customer.store_id)
+    console.log('Total orders in store (count):', count, 'error:', countError)
+    
+    // Fetch actual orders
+    const { data: simpleData, error: simpleError } = await createCustomerClient(slug)
+      .from('orders')
+      .select('id, total, status, created_at, shipping_fee')
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+    
+    console.log('simple orders query result:', simpleData?.length || 0, 'error:', simpleError)
+    
+    // Now fetch with order_items
+    const { data, error } = await createCustomerClient(slug)
       .from('orders')
       .select(`
         id, total, shipping_fee, status, created_at,
@@ -440,6 +555,10 @@ const { slug } = useLocalSearchParams<{ slug: string }>()
       `)
       .eq('customer_id', customer.id)
       .order('created_at', { ascending: false })
+    if (error) {
+      console.error('orders query error:', error)
+    }
+    console.log('orders with items fetched:', data?.length || 0)
     setOrders((data as any) || [])
   }, [customer, slug])
 
@@ -622,6 +741,18 @@ const mg = StyleSheet.create({
   monthTotal: { fontSize: FontSize.sm, fontWeight: '800', color: Colors.textPrimary },
 
   body: { borderTopWidth: 1, borderTopColor: Colors.border, padding: Spacing.md, gap: 0 },
+  
+  // Bulk payment box
+  paymentBox: { backgroundColor: '#FFF7ED', borderRadius: Radius.md, borderWidth: 1, borderColor: '#FED7AA', padding: Spacing.md, gap: Spacing.md, marginTop: Spacing.sm },
+  paymentHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  paymentTitle: { fontSize: FontSize.sm, fontWeight: '700', color: '#C2410C' },
+  paymentSub: { fontSize: FontSize.xs, color: '#9A3412', marginTop: 2, lineHeight: 16 },
+  paymentFields: { gap: Spacing.sm },
+  fieldLabel: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textPrimary, marginBottom: 4 },
+  fieldInput: { borderWidth: 1, borderColor: '#FED7AA', borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: 10, fontSize: FontSize.sm, color: Colors.textPrimary, backgroundColor: Colors.card },
+  payBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 44, borderRadius: Radius.md, backgroundColor: '#F97316' },
+  payBtnText: { fontSize: FontSize.sm, fontWeight: '700', color: '#fff' },
+  
   summary: { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, padding: Spacing.md, gap: Spacing.xs, marginTop: Spacing.sm },
   summaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   summaryLabel: { fontSize: FontSize.xs, color: Colors.textMuted },

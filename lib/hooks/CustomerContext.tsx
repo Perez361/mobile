@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode, PropsWithChildren } from 'react'
+import React, { createContext, useContext, ReactNode, PropsWithChildren, useState, useCallback } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import type { Customer } from '@/types'
 import { useCustomerSession } from './useCustomerSession'
@@ -10,6 +10,9 @@ interface CustomerContextType {
   loading: boolean
   error: string | null
   signOut: () => Promise<void>
+  storeSlug: string | null
+  cartCount: number
+  setCartCount: (count: number) => void
 }
 
 const CustomerContext = createContext<CustomerContextType | null>(null)
@@ -29,9 +32,10 @@ interface CustomerProviderProps {
 
 export function CustomerProvider({ slug, children }: PropsWithChildren<CustomerProviderProps>) {
   const sessionData = useCustomerSession(slug)
+  const [cartCount, setCartCount] = useState(0)
 
   return (
-    <CustomerContext.Provider value={sessionData}>
+    <CustomerContext.Provider value={{ ...sessionData, storeSlug: slug, cartCount, setCartCount }}>
       {children}
     </CustomerContext.Provider>
   )

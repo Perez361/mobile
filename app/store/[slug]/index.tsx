@@ -250,9 +250,16 @@ export default function StorefrontScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState('')
-  const [cartCount, setCartCount] = useState(0)
   const [cartTotal, setCartTotal] = useState(0)
   const cartRef = useRef({ count: 0, total: 0 })
+
+  // Use context for cart count (shared with tabs badge)
+  const { cartCount, setCartCount: updateCartCount } = useCustomerContext()
+
+  const setCartCount = (count: number) => {
+    cartRef.current.count = count
+    updateCartCount(count)
+  }
 
   const theme = getTheme(slug ?? '')
 

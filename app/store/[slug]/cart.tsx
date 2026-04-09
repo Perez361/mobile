@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
   Image, ActivityIndicator, Alert, StyleSheet,
 } from 'react-native'
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useCustomerContext } from '@/lib/hooks/CustomerContext'
@@ -14,13 +14,14 @@ import { formatCurrency, parseNumber } from '@/lib/utils'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
 export default function CartScreen() {
-const { slug } = useLocalSearchParams<{ slug: string }>()
   const router = useRouter()
-  const { user, customer, loading: sessionLoading, error } = useCustomerContext()
+  const { user, customer, loading: sessionLoading, error, storeSlug } = useCustomerContext()
   const [cartItems, setCartItems] = useState<any[]>([])
   const [cartId, setCartId] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [placing, setPlacing] = useState(false)
+  
+  const slug = storeSlug || ''
 
   const fetchCart = useCallback(async () => {
     if (!slug || !customer) return

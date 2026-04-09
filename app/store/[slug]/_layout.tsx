@@ -1,29 +1,25 @@
 import { useEffect, useState } from 'react'
 import { View, Text, StyleSheet } from 'react-native'
-import { Tabs, useLocalSearchParams, useRouter } from 'expo-router'
+import { Tabs, useLocalSearchParams } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { createCustomerClient } from '@/lib/supabase/customer-client'
-import { CustomerProvider, useCustomerContext } from '@/lib/hooks/CustomerContext'
+import { CustomerProvider } from '@/lib/hooks/CustomerContext'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Colors, FontSize } from '@/constants/theme'
 
 export default function StoreLayout() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
-  const router = useRouter()
   const [storeValid, setStoreValid] = useState<boolean | null>(null)
-  const [cartCount, setCartCount] = useState(0)
 
   useEffect(() => {
     if (!slug) { 
       setStoreValid(false)
-      router.replace('/store')
       return 
     }
 
     const supabase = createCustomerClient(slug as string)
     let settled = false
 
-    // Timeout + validation
     Promise.race([
       supabase
         .from('importers')
@@ -36,70 +32,91 @@ export default function StoreLayout() {
     ]).then(({ data, error }) => {
       if (settled) return
       if (error || !data) {
-        console.error('Store validation failed:', error || 'No store found')
         setStoreValid(false)
-        router.replace('/store')
       } else {
         setStoreValid(true)
       }
-    }).catch(err => {
+    }).catch(() => {
       if (settled) return
-      console.error('Store validation error:', err)
       setStoreValid(false)
-      router.replace('/store')
     })
 
     return () => { settled = true }
-  }, [slug, router])
-
-
-
-  // Keep cart badge count fresh
-  useEffect(() => {
-    if (!slug) return
-    const supabase = createCustomerClient(slug)
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) return
-      const { data: imp } = await supabase.from('importers').select('id').ilike('store_slug', slug).single()
-      if (!imp) return
-      const { data: cust } = await supabase
-        .from('customers').select('id, store_id')
-        .eq('user_id', session.user.id).eq('store_id', imp.id).single()
-      if (!cust) return
-      const { data: cart } = await supabase
-        .from('carts').select('id')
-        .eq('customer_id', cust.id).eq('store_id', cust.store_id).single()
-      if (!cart) return
-      const { count } = await supabase
-        .from('cart_items').select('id', { count: 'exact', head: true }).eq('cart_id', cart.id)
-      setCartCount(count || 0)
-    })
   }, [slug])
 
   if (storeValid === null) return <LoadingSpinner fullScreen />
+  if (storeValid === false) return null
 
   return (
     <CustomerProvider slug={slug as string}>
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: Colors.brand,
-          tabBarInactiveTintColor: Colors.textMuted,
-          tabBarStyle: {
-            backgroundColor: Colors.card,
-            borderTopColor: Colors.border,
-            borderTopWidth: 1,
-            height: 60,
-            paddingBottom: 8,
-            paddingTop: 6,
-          },
-          tabBarLabelStyle: {
-            fontSize: FontSize.xs,
-            fontWeight: '600',
-            marginTop: 2,
-          },
-        }}
-      >
+      <StoreTabs />
+    </CustomerProvider>
+  )
+}
+
+function StoreTabs() {
+  const { slug } = useLocalSearchParams<{ slug: string }>()
+  const [cartCount, setCartCount] = useState(0)
+  const [initialLoadDone, setInitialLoadDone] = useState(false)
+
+  // Keep cart badge count fresh - and update on focus
+  useEffect(() => {
+    if (!slug) return
+    
+    const updateCartCount = () => {
+      const supabase = createCustomerClient(slug)
+      supabase.auth.getSession().then(async ({ data: { session } }) => {
+        if (!session) { setCartCount(0); setInitialLoadDone(true); return }
+        const { data: imp } = await supabase.from('importers').select('id').ilike('store_slug', slug).single()
+        if (!imp) { setCartCount(0); setInitialLoadDone(true); return }
+        const { data: cust } = await supabase
+          .from('customers').select('id, store_id')
+          .eq('user_id', session.user.id).eq('store_id', imp.id).single()
+        if (!cust) { setCartCount(0); setInitialLoadDone(true); return }
+        const { data: cart } = await supabase
+          .from('carts').select('id')
+          .eq('customer_id', cust.id).eq('store_id', cust.store_id).single()
+        if (!cart) { setCartCount(0); setInitialLoadDone(true); return }
+        const { count } = await supabase
+          .from('cart_items').select('id', { count: 'exact', head: true }).eq('cart_id', cart.id)
+        setCartCount(count || 0)
+        setInitialLoadDone(true)
+      })
+    }
+
+    // Initial load
+    updateCartCount()
+
+    // Set up interval to poll for changes (every 2 seconds)
+    const interval = setInterval(updateCartCount, 2000)
+
+    return () => clearInterval(interval)
+  }, [slug])
+
+  // Only show badge after initial load to avoid showing stale count
+  const showBadge = initialLoadDone && cartCount > 0
+
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: Colors.brand,
+        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarStyle: {
+          backgroundColor: Colors.card,
+          borderTopColor: Colors.border,
+          borderTopWidth: 1,
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
+        tabBarLabelStyle: {
+          fontSize: FontSize.xs,
+          fontWeight: '600',
+          marginTop: 2,
+        },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
@@ -114,9 +131,9 @@ export default function StoreLayout() {
         options={{
           tabBarLabel: 'Cart',
           tabBarIcon: ({ color, focused }) => (
-            <View>
+            <View style={{ position: 'relative' }}>
               <Ionicons name={focused ? 'cart' : 'cart-outline'} size={22} color={color} />
-              {cartCount > 0 && (
+              {showBadge && (
                 <View style={s.badge}>
                   <Text style={s.badgeText}>{cartCount > 9 ? '9+' : cartCount}</Text>
                 </View>
@@ -146,7 +163,6 @@ export default function StoreLayout() {
       <Tabs.Screen name="login" options={{ href: null }} />
       <Tabs.Screen name="register" options={{ href: null }} />
     </Tabs>
-    </CustomerProvider>
   )
 }
 
