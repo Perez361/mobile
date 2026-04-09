@@ -26,8 +26,15 @@ export default function MoreScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out', style: 'destructive', onPress: async () => {
-          await signOut()
-          router.replace('/')
+          try {
+            await signOut()
+            // Immediately redirect to login page
+            router.replace('/')
+          } catch (error) {
+            console.error('Sign out error:', error)
+            // Force redirect even if sign out fails
+            router.replace('/')
+          }
         },
       },
     ])

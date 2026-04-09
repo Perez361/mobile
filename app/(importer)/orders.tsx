@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
   TextInput, Linking, Alert, StyleSheet,
@@ -68,7 +68,7 @@ function waShippingReminderMsg(order: any): string {
 }
 
 export default function OrdersScreen() {
-  const { user } = useImporterSession()
+  const { user, importer } = useImporterSession()
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -81,7 +81,7 @@ export default function OrdersScreen() {
   const [actionLoading, setActionLoading] = useState(false)
 
   const fetchOrders = useCallback(async () => {
-    if (!user) return
+    if (!importer) return
     const { data } = await createImporterClient()
       .from('orders')
       .select(`
@@ -92,14 +92,35 @@ export default function OrdersScreen() {
         customers (full_name, username, contact, email, location),
         order_items (quantity, price, products (name))
       `)
-      .eq('store_id', user.id)
+      .eq('store_id', importer.id)
       .order('created_at', { ascending: false })
     setOrders(data || [])
     setLoading(false)
-  }, [user])
+  }, [importer])
 
   useFocusEffect(useCallback(() => { fetchOrders() }, [fetchOrders]))
   async function onRefresh() { setRefreshing(true); await fetchOrders(); setRefreshing(false) }
+
+  // Real-time subscription for order updates
+  useEffect(() => {
+    if (!importer) return
+    const supabase = createImporterClient()
+    const channel = supabase
+      .channel(`orders-mobile-${importer.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+        filter: `store_id=eq.${importer.id}`,
+      }, () => {
+        fetchOrders()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [importer, fetchOrders])
 
   function toggleExpand(id: string) {
     if (expandedId === id) { setExpandedId(null); return }

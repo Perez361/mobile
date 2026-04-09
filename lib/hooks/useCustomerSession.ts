@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import type { User, Session } from '@supabase/supabase-js'
+import { useState, useEffect, useRef } from 'react'
+import type { User, Session, AuthError } from '@supabase/supabase-js'
 import { createCustomerClient } from '@/lib/supabase/customer-client'
 import type { Customer } from '@/types'
 
@@ -8,61 +8,155 @@ export function useCustomerSession(slug: string) {
   const [session, setSession] = useState<Session | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const importerCache = useRef<Map<string, string>>(new Map())
 
   useEffect(() => {
-    if (!slug) return
-    const supabase = createCustomerClient(slug)
+    if (!slug) {
+      setLoading(false)
+      return
+    }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    setLoading(true)
+    setError(null)
+
+    const supabase = createCustomerClient(slug)
+    let settled = false
+
+    // Timeout promise
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Session timeout')), 5000)
+    )
+
+    // Get session with timeout
+    Promise.race([
+      supabase.auth.getSession(),
+      timeout
+    ]).then(async ({ data: { session } }) => {
+      if (settled) return
       setSession(session)
       setUser(session?.user ?? null)
       if (session?.user) {
-        fetchCustomer(session.user.id, slug)
+        await fetchCustomer(session.user.id, slug)
       } else {
         setLoading(false)
       }
+    }).catch(async (err: any) => {
+      if (settled) return
+
+      // Handle invalid refresh token by clearing stored session
+      if (err instanceof Error && (
+        err.message?.includes('Invalid Refresh Token') ||
+        err.message?.includes('Refresh Token Not Found') ||
+        (err as AuthError)?.status === 400
+      )) {
+        console.warn('Invalid refresh token detected, clearing session')
+        try {
+          await supabase.auth.signOut({ scope: 'local' })
+        } catch (signOutErr) {
+          console.warn('Failed to sign out locally:', signOutErr)
+        }
+        setSession(null)
+        setUser(null)
+        setCustomer(null)
+        setError(null) // Don't show error for expired tokens
+        setLoading(false)
+        return
+      }
+
+      console.error('Customer session error:', err)
+      setError(err.message || 'Authentication error')
+      setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session)
       setUser(session?.user ?? null)
       if (session?.user) {
-        fetchCustomer(session.user.id, slug)
+        try {
+          await fetchCustomer(session.user.id, slug)
+        } catch (err: any) {
+          console.error('Auth state change customer fetch error:', err)
+          // If token is invalid, clear everything
+          if (err instanceof Error && (
+            err.message?.includes('Invalid Refresh Token') ||
+            err.message?.includes('Refresh Token Not Found')
+          )) {
+            setSession(null)
+            setUser(null)
+            setCustomer(null)
+          }
+        }
       } else {
         setCustomer(null)
         setLoading(false)
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      settled = true
+      subscription.unsubscribe()
+    }
   }, [slug])
 
-  async function fetchCustomer(userId: string, storeSlug: string) {
-    const supabase = createCustomerClient(storeSlug)
-    // Get importer id by slug first
-    const { data: imp } = await supabase
-      .from('importers')
-      .select('id')
-      .ilike('store_slug', storeSlug)
-      .single()
+  async function fetchCustomer(userId: string, storeSlug: string): Promise<void> {
+    try {
+      setLoading(true)
 
-    if (!imp) { setLoading(false); return }
+      // Cache importer ID
+      let importerId = importerCache.current.get(storeSlug)
+      if (!importerId) {
+        // Define timeout promise for lookup
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Store lookup timeout')), 3000)
+        )
 
-    const { data } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('store_id', imp.id)
-      .single()
+        const supabase = createCustomerClient(storeSlug)
+        const { data: imp, error } = await Promise.race([
+          supabase
+            .from('importers')
+            .select('id')
+            .ilike('store_slug', storeSlug)
+            .single(),
+          timeoutPromise
+        ])
 
-    setCustomer(data ?? null)
-    setLoading(false)
+        if (error) throw error
+        if (!imp) throw new Error('Store not found')
+        
+        importerId = imp.id
+        importerCache.current.set(storeSlug, importerId)
+      }
+
+      // Fetch customer
+      const supabase = createCustomerClient(storeSlug)
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('store_id', importerId)
+        .single()
+
+      if (error) throw error
+      setCustomer(data ?? null)
+    } catch (err: any) {
+      console.error('fetchCustomer error:', err)
+      setError(err.message)
+      setCustomer(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function signOut() {
-    const supabase = createCustomerClient(slug)
-    await supabase.auth.signOut()
+    try {
+      const supabase = createCustomerClient(slug)
+      await supabase.auth.signOut()
+      importerCache.current.clear()
+    } catch (err) {
+      console.error('Sign out error:', err)
+    }
   }
 
-  return { user, session, customer, loading, signOut }
+  return { user, session, customer, loading, error, signOut }
 }

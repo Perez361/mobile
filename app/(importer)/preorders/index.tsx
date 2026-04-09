@@ -31,13 +31,13 @@ type MonthGroup = {
 
 export default function PreOrdersScreen() {
   const router = useRouter()
-  const { user } = useImporterSession()
+  const { user, importer } = useImporterSession()
   const [groups, setGroups] = useState<MonthGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchData = useCallback(async () => {
-    if (!user) return
+    if (!importer) return
     const { data } = await createImporterClient()
       .from('orders')
       .select(`
@@ -47,7 +47,7 @@ export default function PreOrdersScreen() {
           products (tracking_number)
         )
       `)
-      .eq('store_id', user.id)
+      .eq('store_id', importer.id)
       .order('created_at', { ascending: false })
 
     if (!data) { setLoading(false); return }
@@ -74,7 +74,7 @@ export default function PreOrdersScreen() {
 
     setGroups(Array.from(map.values()))
     setLoading(false)
-  }, [user])
+  }, [importer])
 
   useFocusEffect(useCallback(() => { fetchData() }, [fetchData]))
   async function onRefresh() { setRefreshing(true); await fetchData(); setRefreshing(false) }

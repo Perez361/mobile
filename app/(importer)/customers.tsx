@@ -12,18 +12,18 @@ import { getTimeAgo } from '@/lib/utils'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
 export default function CustomersScreen() {
-  const { user } = useImporterSession()
+  const { user, importer } = useImporterSession()
   const [customers, setCustomers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState('')
 
   const fetch = useCallback(async () => {
-    if (!user) return
-    const { data } = await createImporterClient().from('customers').select('*').eq('store_id', user.id).order('created_at', { ascending: false })
+    if (!importer) return
+    const { data } = await createImporterClient().from('customers').select('*').eq('store_id', importer.id).order('created_at', { ascending: false })
     setCustomers(data || [])
     setLoading(false)
-  }, [user])
+  }, [importer])
 
   useFocusEffect(useCallback(() => { fetch() }, [fetch]))
   async function onRefresh() { setRefreshing(true); await fetch(); setRefreshing(false) }

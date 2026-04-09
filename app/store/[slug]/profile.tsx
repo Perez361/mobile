@@ -1,124 +1,414 @@
-import { useState } from 'react'
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform, Alert, TouchableOpacity, StyleSheet } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useForm, Controller } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  View, Text, ScrollView, RefreshControl, KeyboardAvoidingView,
+  Platform, TouchableOpacity, TextInput, ActivityIndicator,
+  Alert, StyleSheet,
+} from 'react-native'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useCustomerSession } from '@/lib/hooks/useCustomerSession'
+import { Ionicons } from '@expo/vector-icons'
+import { useCustomerContext } from '@/lib/hooks/CustomerContext'
 import { createCustomerClient } from '@/lib/supabase/customer-client'
-import { Card } from '@/components/ui/Card'
-import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { formatCurrency, parseNumber } from '@/lib/utils'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
-const schema = z.object({
-  full_name: z.string().min(2, 'Name is required'),
-  contact: z.string().min(10, 'Enter a valid phone number'),
-  location: z.string().optional(),
-  shipping_address: z.string().optional(),
+// ─── Status helpers (shared with orders) ─────────────────────────────────────
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending', product_paid: 'Product Paid', processing: 'Processing',
+  arrived: 'Arrived', shipping_billed: 'Shipping Due', shipping_paid: 'Shipping Paid',
+  delivered: 'Delivered', cancelled: 'Cancelled',
+}
+
+const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  pending: { bg: '#FEF9C3', text: '#A16207' },
+  product_paid: { bg: '#DBEAFE', text: '#1D4ED8' },
+  processing: { bg: '#EEF2FF', text: '#4338CA' },
+  arrived: { bg: '#F3E8FF', text: '#7E22CE' },
+  shipping_billed: { bg: '#FFEDD5', text: '#C2410C' },
+  shipping_paid: { bg: '#DCFCE7', text: '#15803D' },
+  delivered: { bg: '#D1FAE5', text: '#065F46' },
+  cancelled: { bg: '#FEE2E2', text: '#B91C1C' },
+}
+
+// ─── Form field ───────────────────────────────────────────────────────────────
+
+function FormField({
+  label, value, onChangeText, placeholder, keyboardType, multiline,
+}: {
+  label: string
+  value: string
+  onChangeText: (v: string) => void
+  placeholder?: string
+  keyboardType?: any
+  multiline?: boolean
+}) {
+  return (
+    <View style={f.wrap}>
+      <Text style={f.label}>{label}</Text>
+      <TextInput
+        style={[f.input, multiline && f.multiline]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={Colors.textMuted}
+        keyboardType={keyboardType}
+        multiline={multiline}
+        textAlignVertical={multiline ? 'top' : undefined}
+        autoCapitalize="none"
+      />
+    </View>
+  )
+}
+
+const f = StyleSheet.create({
+  wrap: { gap: 4 },
+  label: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, paddingHorizontal: Spacing.md, height: 44, fontSize: FontSize.sm, color: Colors.textPrimary, backgroundColor: Colors.card },
+  multiline: { height: 72, paddingTop: Spacing.sm },
 })
-type FormData = z.infer<typeof schema>
+
+// ─── Info tile (view mode) ────────────────────────────────────────────────────
+
+function InfoTile({ icon, label, value }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; value?: string }) {
+  return (
+    <View style={it.tile}>
+      <View style={it.iconBox}>
+        <Ionicons name={icon} size={16} color={Colors.brand} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={it.label}>{label}</Text>
+        <Text style={it.value} numberOfLines={2}>{value || 'Not set'}</Text>
+      </View>
+    </View>
+  )
+}
+
+const it = StyleSheet.create({
+  tile: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md },
+  iconBox: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.brandLight, alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 10, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  value: { fontSize: FontSize.sm, fontWeight: '500', color: Colors.textPrimary, marginTop: 1 },
+})
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function CustomerProfileScreen() {
-  const { slug } = useLocalSearchParams<{ slug: string }>()
+const { slug } = useLocalSearchParams<{ slug: string }>()
   const router = useRouter()
-  const { user, customer, loading, signOut } = useCustomerSession(slug)
+  const { user, customer, loading: sessionLoading, error, signOut } = useCustomerContext()
+
+  const [recentOrders, setRecentOrders] = useState<any[]>([])
+  const [refreshing, setRefreshing] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    values: { full_name: customer?.full_name || '', contact: customer?.contact || '', location: customer?.location || '', shipping_address: customer?.shipping_address || '' },
+  const [form, setForm] = useState({
+    full_name: '', username: '', contact: '', location: '', shipping_address: '',
   })
 
-  async function onSubmit(data: FormData) {
+  const fetchData = useCallback(async () => {
+    if (!slug || !customer) return
+    const supabase = createCustomerClient(slug)
+    const { data: orders } = await supabase
+      .from('orders')
+      .select('id, total, status, created_at, shipping_fee')
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false })
+      .limit(5)
+    setRecentOrders(orders || [])
+  }, [customer, slug])
+
+  // Sync form and fetch data when customer becomes available
+  useEffect(() => {
+    if (!customer) return
+    setForm({
+      full_name: customer.full_name || '',
+      username: customer.username || '',
+      contact: customer.contact || '',
+      location: customer.location || '',
+      shipping_address: customer.shipping_address || '',
+    })
+    fetchData()
+  }, [customer])
+
+  // Re-fetch recent orders on screen focus
+  useFocusEffect(useCallback(() => { fetchData() }, [fetchData]))
+
+  async function onRefresh() { setRefreshing(true); await fetchData(); setRefreshing(false) }
+
+  async function handleSave() {
     if (!customer) return
     setSaving(true)
-    try {
-      const { error } = await createCustomerClient(slug).from('customers').update(data).eq('id', customer.id)
-      if (error) { Alert.alert('Error', error.message); return }
-      Alert.alert('Saved', 'Your profile has been updated.')
-    } finally { setSaving(false) }
+    const { error } = await createCustomerClient(slug)
+      .from('customers')
+      .update(form)
+      .eq('id', customer.id)
+    setSaving(false)
+    if (error) { Alert.alert('Error', error.message); return }
+    setIsEditing(false)
+    Alert.alert('Saved', 'Your profile has been updated.')
   }
 
   function handleSignOut() {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: async () => { await signOut(); router.replace(`/store/${slug}`) } },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => { await signOut(); router.replace(`/store/${slug}`) },
+      },
     ])
   }
 
-  if (loading) return <LoadingSpinner fullScreen />
+if (sessionLoading) return <LoadingSpinner fullScreen />
 
-  if (!user || !customer) {
+  if (error && !customer) {
     return (
       <SafeAreaView style={s.root}>
-        <View style={s.header}><Text style={s.title}>Profile</Text></View>
-        <View style={s.notSignedIn}>
-          <Text style={s.bigIcon}>👤</Text>
-          <Text style={s.notSignedInTitle}>Not signed in</Text>
-          <Text style={s.notSignedInSub}>Sign in to view and edit your profile</Text>
-          <Button onPress={() => router.push(`/store/${slug}/login`)} style={s.fullWidth}>Sign In</Button>
-          <Button variant="secondary" onPress={() => router.push(`/store/${slug}/register`)} style={s.fullWidth}>Create Account</Button>
+        <View style={s.centered}>
+          <Ionicons name="alert-circle-outline" size={48} color={Colors.warning} />
+          <Text style={[s.emptyTitle, { color: Colors.warning }]}>Session Error</Text>
+          <Text style={s.emptySub}>{error}</Text>
+          <Button onPress={() => router.push(`/store/${slug}/login`)}>Retry Login</Button>
         </View>
       </SafeAreaView>
     )
   }
 
+  // Not signed in
+  if (!user || !customer) {
+    return (
+      <SafeAreaView style={s.root}>
+        <View style={s.header}><Text style={s.title}>Account</Text></View>
+        <View style={s.centered}>
+          <View style={s.avatarBox}>
+            <Ionicons name="person-outline" size={32} color={Colors.textMuted} />
+          </View>
+          <Text style={s.emptyTitle}>Not signed in</Text>
+          <Text style={s.emptySub}>Sign in to view and manage your profile</Text>
+          <View style={s.emptyActions}>
+            <Button onPress={() => router.push(`/store/${slug}/login`)}>Sign In</Button>
+            <Button variant="secondary" onPress={() => router.push(`/store/${slug}/register`)}>Create Account</Button>
+          </View>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  const initial = (customer.full_name || user.email || '?')[0].toUpperCase()
+  const displayName = customer.full_name || customer.username || 'Customer'
+
   return (
     <SafeAreaView style={s.root}>
-      <View style={[s.header, s.headerRow]}>
-        <Text style={s.title}>Profile</Text>
-        <TouchableOpacity onPress={handleSignOut}><Text style={s.signOut}>Sign out</Text></TouchableOpacity>
-      </View>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-          <Card style={s.card}>
-            <View style={s.avatarBox}>
-              <Text style={s.avatarText}>{(customer.full_name || user.email || '?')[0].toUpperCase()}</Text>
+        <ScrollView
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          contentContainerStyle={s.list}
+          keyboardShouldPersistTaps="handled"
+        >
+
+          {/* ── Profile card ── */}
+          <View style={s.card}>
+            {/* Avatar row */}
+            <View style={s.profileRow}>
+              <View style={s.avatarBox}>
+                <Text style={s.avatarInitial}>{initial}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.displayName}>{displayName}</Text>
+                <Text style={s.email} numberOfLines={1}>{user.email}</Text>
+              </View>
+              {!isEditing ? (
+                <TouchableOpacity style={s.editBtn} onPress={() => setIsEditing(true)}>
+                  <Ionicons name="pencil-outline" size={14} color={Colors.brand} />
+                  <Text style={s.editBtnText}>Edit</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={s.cancelBtn} onPress={() => setIsEditing(false)}>
+                  <Ionicons name="close-outline" size={16} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
             </View>
-            <Text style={s.customerName}>{customer.full_name || 'Customer'}</Text>
-            <Text style={s.email}>{user.email}</Text>
-          </Card>
-          <Card style={s.card}>
-            <Text style={s.sectionTitle}>Edit Profile</Text>
-            <Controller control={control} name="full_name" render={({ field: { onChange, value } }) => (
-              <Input label="Full Name" onChangeText={onChange} value={value} error={errors.full_name?.message} />
-            )} />
-            <Controller control={control} name="contact" render={({ field: { onChange, value } }) => (
-              <Input label="Phone Number" keyboardType="phone-pad" onChangeText={onChange} value={value} error={errors.contact?.message} />
-            )} />
-            <Controller control={control} name="location" render={({ field: { onChange, value } }) => (
-              <Input label="Location" placeholder="e.g. Accra, Ghana" onChangeText={onChange} value={value} />
-            )} />
-            <Controller control={control} name="shipping_address" render={({ field: { onChange, value } }) => (
-              <Input label="Shipping Address" placeholder="Where should we deliver?" onChangeText={onChange} value={value} multiline numberOfLines={2} style={{ height: 60, textAlignVertical: 'top' }} />
-            )} />
-            <Button onPress={handleSubmit(onSubmit)} loading={saving}>Save Changes</Button>
-          </Card>
+
+            {/* View mode */}
+            {!isEditing ? (
+              <View style={s.infoGrid}>
+                <InfoTile icon="person-outline" label="Full Name" value={customer.full_name ?? undefined} />
+                <InfoTile icon="at-outline" label="Username" value={customer.username ?? undefined} />
+                <InfoTile icon="call-outline" label="Contact" value={customer.contact ?? undefined} />
+                <InfoTile icon="location-outline" label="Location" value={customer.location ?? undefined} />
+                <InfoTile icon="home-outline" label="Shipping Address" value={customer.shipping_address ?? undefined} />
+              </View>
+            ) : (
+              /* Edit mode */
+              <View style={s.formWrap}>
+                <FormField label="Full Name" value={form.full_name} onChangeText={v => setForm(p => ({ ...p, full_name: v }))} placeholder="John Doe" />
+                <FormField label="Username" value={form.username} onChangeText={v => setForm(p => ({ ...p, username: v }))} placeholder="johndoe" />
+                <FormField label="Contact" value={form.contact} onChangeText={v => setForm(p => ({ ...p, contact: v }))} placeholder="0551234567" keyboardType="phone-pad" />
+                <FormField label="Location" value={form.location} onChangeText={v => setForm(p => ({ ...p, location: v }))} placeholder="Accra, Ghana" />
+                <FormField label="Shipping Address" value={form.shipping_address} onChangeText={v => setForm(p => ({ ...p, shipping_address: v }))} placeholder="123 Street, Accra" multiline />
+
+                <TouchableOpacity
+                  style={[s.saveBtn, saving && { opacity: 0.6 }]}
+                  onPress={handleSave}
+                  disabled={saving}
+                  activeOpacity={0.85}
+                >
+                  {saving
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : (
+                      <>
+                        <Ionicons name="checkmark-outline" size={16} color="#fff" />
+                        <Text style={s.saveBtnText}>Save Changes</Text>
+                      </>
+                    )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* ── Recent Orders ── */}
+          <View style={s.card}>
+            <View style={s.sectionHeader}>
+              <View style={s.sectionHeaderLeft}>
+                <View style={s.sectionIconBox}>
+                  <Ionicons name="receipt-outline" size={16} color={Colors.brand} />
+                </View>
+                <View>
+                  <Text style={s.sectionTitle}>Order History</Text>
+                  <Text style={s.sectionSub}>Recent orders</Text>
+                </View>
+              </View>
+              <TouchableOpacity style={s.viewAllBtn} onPress={() => router.push(`/store/${slug}/orders`)}>
+                <Text style={s.viewAllText}>View all</Text>
+                <Ionicons name="chevron-forward" size={14} color={Colors.brand} />
+              </TouchableOpacity>
+            </View>
+
+            {recentOrders.length === 0 ? (
+              <View style={s.ordersEmpty}>
+                <Ionicons name="cube-outline" size={32} color="#CBD5E1" />
+                <Text style={s.ordersEmptyText}>No orders yet</Text>
+                <TouchableOpacity onPress={() => router.push(`/store/${slug}`)}>
+                  <Text style={s.ordersEmptyLink}>Start shopping →</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={s.ordersList}>
+                {recentOrders.map((order: any) => {
+                  const status = (order.status || 'pending').toLowerCase()
+                  const statusStyle = STATUS_COLORS[status] || { bg: '#F1F5F9', text: '#64748B' }
+                  const total = parseNumber(order.total) + parseNumber(order.shipping_fee || 0)
+                  return (
+                    <View key={order.id} style={s.orderRow}>
+                      <View style={s.orderIconBox}>
+                        <Ionicons name="cube-outline" size={14} color={Colors.textMuted} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.orderIdText}>#{order.id.slice(-8).toUpperCase()}</Text>
+                        <Text style={s.orderDate}>
+                          {new Date(order.created_at).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </Text>
+                      </View>
+                      <View style={[s.orderBadge, { backgroundColor: statusStyle.bg }]}>
+                        <Text style={[s.orderBadgeText, { color: statusStyle.text }]}>
+                          {STATUS_LABELS[status] || status}
+                        </Text>
+                      </View>
+                      <Text style={s.orderTotal}>
+                        GH₵{Math.round(total).toLocaleString('en-GH')}
+                      </Text>
+                    </View>
+                  )
+                })}
+                <TouchableOpacity style={s.viewAllRow} onPress={() => router.push(`/store/${slug}/orders`)}>
+                  <Text style={s.viewAllRowText}>View all orders</Text>
+                  <Ionicons name="chevron-forward" size={14} color={Colors.brand} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* ── Sign out ── */}
+          <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut} activeOpacity={0.8}>
+            <Ionicons name="log-out-outline" size={18} color={Colors.danger} />
+            <Text style={s.signOutText}>Sign Out</Text>
+          </TouchableOpacity>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.surface },
-  header: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.md, paddingBottom: Spacing.md, backgroundColor: Colors.card, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: {
+    paddingHorizontal: Spacing.xl, paddingTop: Spacing.md, paddingBottom: Spacing.md,
+    backgroundColor: Colors.card, borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
   title: { fontSize: FontSize.xl, fontWeight: '900', color: Colors.textPrimary },
-  signOut: { fontSize: FontSize.sm, fontWeight: '500', color: Colors.danger },
-  scroll: { padding: Spacing.lg, gap: Spacing.md },
-  card: { padding: Spacing.lg, gap: Spacing.md },
-  avatarBox: { width: 56, height: 56, borderRadius: 28, backgroundColor: Colors.brandLight, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: FontSize.xxl, fontWeight: '900', color: Colors.brand },
-  customerName: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
-  email: { fontSize: FontSize.sm, color: Colors.textMuted },
-  sectionTitle: { fontSize: FontSize.base, fontWeight: '700', color: Colors.textPrimary },
-  notSignedIn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xxl, gap: Spacing.md },
-  bigIcon: { fontSize: 52 },
-  notSignedInTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, textAlign: 'center' },
-  notSignedInSub: { fontSize: FontSize.base, color: Colors.textMuted, textAlign: 'center' },
-  fullWidth: { width: '100%' } as any,
+  list: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing.xxxl },
+
+  // Not signed-in
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xxl, gap: Spacing.sm },
+  emptyTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, textAlign: 'center' },
+  emptySub: { fontSize: FontSize.sm, color: Colors.textMuted, textAlign: 'center', marginBottom: Spacing.sm },
+  emptyActions: { width: '100%', gap: Spacing.sm },
+
+  // Card container
+  card: { backgroundColor: Colors.card, borderRadius: Radius.xl, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, gap: Spacing.md },
+
+  // Profile row
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  avatarBox: { width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.brandLight, alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { fontSize: FontSize.xl, fontWeight: '900', color: Colors.brand },
+  displayName: { fontSize: FontSize.base, fontWeight: '700', color: Colors.textPrimary },
+  email: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 1 },
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: Spacing.md, paddingVertical: 7, borderRadius: Radius.md, backgroundColor: Colors.brandLight, borderWidth: 1, borderColor: Colors.brand + '40' },
+  editBtnText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.brand },
+  cancelBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border },
+
+  // View mode info grid
+  infoGrid: { gap: Spacing.sm },
+
+  // Edit form
+  formWrap: { gap: Spacing.md },
+  saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 48, borderRadius: Radius.md, backgroundColor: Colors.brand, marginTop: Spacing.sm },
+  saveBtnText: { fontSize: FontSize.base, fontWeight: '700', color: '#fff' },
+
+  // Section header
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  sectionIconBox: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.brandLight, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textPrimary },
+  sectionSub: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 1 },
+  viewAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  viewAllText: { fontSize: FontSize.xs, fontWeight: '600', color: Colors.brand },
+
+  // Orders empty
+  ordersEmpty: { alignItems: 'center', paddingVertical: Spacing.xxl, gap: Spacing.sm },
+  ordersEmptyText: { fontSize: FontSize.sm, color: Colors.textMuted },
+  ordersEmptyLink: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.brand },
+
+  // Orders list
+  ordersList: { gap: 0 },
+  orderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border },
+  orderIconBox: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  orderIdText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
+  orderDate: { fontSize: 10, color: Colors.textMuted, marginTop: 1 },
+  orderBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: Radius.full },
+  orderBadgeText: { fontSize: 10, fontWeight: '700' },
+  orderTotal: { fontSize: FontSize.sm, fontWeight: '800', color: Colors.textPrimary, minWidth: 64, textAlign: 'right' },
+  viewAllRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border },
+  viewAllRowText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.brand },
+
+  // Sign out
+  signOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, height: 52, borderRadius: Radius.lg, backgroundColor: Colors.dangerLight, borderWidth: 1, borderColor: Colors.danger + '30' },
+  signOutText: { fontSize: FontSize.base, fontWeight: '700', color: Colors.danger },
 })

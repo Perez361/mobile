@@ -30,7 +30,7 @@ type FormData = z.infer<typeof schema>
 
 export default function NewProductScreen() {
   const router = useRouter()
-  const { user } = useImporterSession()
+  const { user, importer } = useImporterSession()
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
 
@@ -43,11 +43,11 @@ export default function NewProductScreen() {
   })
 
   async function onSubmit(data: FormData) {
-    if (!user) return
+    if (!importer) return
     setLoading(true)
     try {
       const { error } = await createImporterClient().from('products').insert({
-        importer_id: user.id,
+        importer_id: importer.id,
         name: data.name,
         slug: slugify(data.name),
         price: Number(data.price),

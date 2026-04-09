@@ -38,10 +38,9 @@ export function useImporterSession() {
 
   async function signOut() {
     const supabase = createImporterClient()
-    // Clear local state immediately so the layout redirects without waiting for the listener
-    setUser(null)
-    setSession(null)
-    setImporter(null)
+    // Sign out from Supabase first so the session is cleared before any navigation happens.
+    // onAuthStateChange will fire and clear local state; we don't set it manually to avoid
+    // a race where the welcome screen's getSession() still finds the old live session.
     await supabase.auth.signOut()
   }
 

@@ -32,7 +32,7 @@ type FormData = z.infer<typeof schema>
 export default function EditProductScreen() {
   const router = useRouter()
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { user } = useImporterSession()
+  const { user, importer } = useImporterSession()
   const [fetching, setFetching] = useState(true)
   const [loading, setLoading] = useState(false)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
@@ -61,7 +61,7 @@ export default function EditProductScreen() {
   }, [id])
 
   async function onSubmit(data: FormData) {
-    if (!user || !id) return
+    if (!importer || !id) return
     setLoading(true)
     try {
       const { error } = await createImporterClient().from('products')
@@ -76,7 +76,7 @@ export default function EditProductScreen() {
           supplier_name:   data.supplier_name || null,
           supplier_url:    data.supplier_url || null,
         })
-        .eq('id', id).eq('importer_id', user.id)
+        .eq('id', id).eq('importer_id', importer.id)
       if (error) { Alert.alert('Error', error.message); return }
       router.back()
     } catch (e: any) {

@@ -14,17 +14,17 @@ import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
 export default function ProductsScreen() {
   const router = useRouter()
-  const { user } = useImporterSession()
+  const { user, importer } = useImporterSession()
   const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const fetch = useCallback(async () => {
-    if (!user) return
-    const { data } = await createImporterClient().from('products').select('*').eq('importer_id', user.id).order('created_at', { ascending: false })
+    if (!importer) return
+    const { data } = await createImporterClient().from('products').select('*').eq('importer_id', importer.id).order('created_at', { ascending: false })
     setProducts(data || [])
     setLoading(false)
-  }, [user])
+  }, [importer])
 
   useFocusEffect(useCallback(() => { fetch() }, [fetch]))
   async function onRefresh() { setRefreshing(true); await fetch(); setRefreshing(false) }

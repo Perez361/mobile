@@ -38,7 +38,7 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchData = useCallback(async () => {
-    if (!user) return
+    if (!importer) return
     const supabase = createImporterClient()
     const [
       { count: productCount },
@@ -47,13 +47,13 @@ export default function DashboardScreen() {
       { data: orders },
       { data: recent },
     ] = await Promise.all([
-      supabase.from('products').select('*', { count: 'exact', head: true }).eq('importer_id', user.id),
-      supabase.from('orders').select('*', { count: 'exact', head: true }).eq('store_id', user.id),
-      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('store_id', user.id),
-      supabase.from('orders').select('total, shipping_fee, status').eq('store_id', user.id),
+      supabase.from('products').select('*', { count: 'exact', head: true }).eq('importer_id', importer.id),
+      supabase.from('orders').select('*', { count: 'exact', head: true }).eq('store_id', importer.id),
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('store_id', importer.id),
+      supabase.from('orders').select('total, shipping_fee, status').eq('store_id', importer.id),
       supabase.from('orders')
         .select('id, status, created_at, total, customers (full_name, username)')
-        .eq('store_id', user.id)
+        .eq('store_id', importer.id)
         .order('created_at', { ascending: false })
         .limit(5),
     ])
@@ -69,7 +69,7 @@ export default function DashboardScreen() {
     })
     setRecentOrders(recent || [])
     setStatsLoading(false)
-  }, [user])
+  }, [importer])
 
   useFocusEffect(useCallback(() => { fetchData() }, [fetchData]))
   async function onRefresh() { setRefreshing(true); await fetchData(); setRefreshing(false) }

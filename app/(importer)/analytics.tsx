@@ -36,14 +36,14 @@ const STATUS_CONFIG = [
 
 export default function AnalyticsScreen() {
   const router = useRouter()
-  const { user } = useImporterSession()
+  const { user, importer } = useImporterSession()
   const [period, setPeriod] = useState<Period>('30d')
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchStats = useCallback(async () => {
-    if (!user) return
+    if (!importer) return
     const supabase = createImporterClient()
     const days = DAYS[period]
     const since = new Date(); since.setDate(since.getDate() - days)
@@ -60,13 +60,13 @@ export default function AnalyticsScreen() {
       { data: orderItems },
       { data: products },
     ] = await Promise.all([
-      supabase.from('orders').select('id, total, shipping_fee, status, created_at').eq('store_id', user.id).gte('created_at', sinceISO),
-      supabase.from('orders').select('id, total, shipping_fee, status').eq('store_id', user.id).gte('created_at', prevSinceISO).lt('created_at', sinceISO),
-      supabase.from('orders').select('id, total, shipping_fee, status, created_at').eq('store_id', user.id),
-      supabase.from('customers').select('id').eq('store_id', user.id).gte('created_at', sinceISO),
-      supabase.from('customers').select('id').eq('store_id', user.id).gte('created_at', prevSinceISO).lt('created_at', sinceISO),
+      supabase.from('orders').select('id, total, shipping_fee, status, created_at').eq('store_id', importer.id).gte('created_at', sinceISO),
+      supabase.from('orders').select('id, total, shipping_fee, status').eq('store_id', importer.id).gte('created_at', prevSinceISO).lt('created_at', sinceISO),
+      supabase.from('orders').select('id, total, shipping_fee, status, created_at').eq('store_id', importer.id),
+      supabase.from('customers').select('id').eq('store_id', importer.id).gte('created_at', sinceISO),
+      supabase.from('customers').select('id').eq('store_id', importer.id).gte('created_at', prevSinceISO).lt('created_at', sinceISO),
       supabase.from('order_items').select('product_id, quantity, price, order_id').in('order_id', (orders || []).map((o: any) => o.id)),
-      supabase.from('products').select('id, name').eq('importer_id', user.id),
+      supabase.from('products').select('id, name').eq('importer_id', importer.id),
     ])
 
     const paid = (orders || []).filter((o: any) => o.status !== 'cancelled')
@@ -127,7 +127,7 @@ export default function AnalyticsScreen() {
       monthly,
     })
     setLoading(false)
-  }, [user, period])
+  }, [importer, period])
 
   useFocusEffect(useCallback(() => { fetchStats() }, [fetchStats]))
   async function onRefresh() { setRefreshing(true); await fetchStats(); setRefreshing(false) }

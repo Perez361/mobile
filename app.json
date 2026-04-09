@@ -49,7 +49,8 @@
           "photosPermission": "ImportFlow PRO accesses your photos to upload product images.",
           "cameraPermission": "ImportFlow PRO uses your camera to take product photos."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

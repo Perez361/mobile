@@ -21,13 +21,13 @@ export default function MyStoreScreen() {
   const storeSlug = importer?.store_slug
 
   const fetchProducts = useCallback(async () => {
-    if (!user) return
+    if (!importer) return
     const { data } = await createImporterClient()
-      .from('products').select('*').eq('importer_id', user.id)
+      .from('products').select('*').eq('importer_id', importer.id)
       .order('created_at', { ascending: false })
     setProducts(data || [])
     setLoading(false)
-  }, [user])
+  }, [importer])
 
   useFocusEffect(useCallback(() => { fetchProducts() }, [fetchProducts]))
   async function onRefresh() { setRefreshing(true); await fetchProducts(); setRefreshing(false) }

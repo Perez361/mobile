@@ -146,7 +146,7 @@ export default function SettingsScreen() {
 
   // ── Save profile ───────────────────────────────────────────────────────────
   async function saveProfile() {
-    if (!user) return
+    if (!importer) return
     if (!profileForm.business_name.trim()) { setProfileResult({ error: 'Business name is required' }); return }
     if (!profileForm.store_slug.trim()) { setProfileResult({ error: 'Store URL is required' }); return }
 
@@ -162,7 +162,7 @@ export default function SettingsScreen() {
           location:      profileForm.location.trim()  || null,
           store_slug:    profileForm.store_slug.trim(),
         })
-        .eq('id', user.id)
+        .eq('id', importer?.id)
 
       if (error) {
         setProfileResult({ error: error.message })

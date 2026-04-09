@@ -71,7 +71,7 @@ type ProductGroup = {
 export default function PreOrderMonthScreen() {
   const router = useRouter()
   const { month } = useLocalSearchParams<{ month: string }>()
-  const { user } = useImporterSession()
+  const { user, importer } = useImporterSession()
 
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([])
   const [loading, setLoading] = useState(true)
@@ -87,7 +87,7 @@ export default function PreOrderMonthScreen() {
   const [billingProduct, setBillingProduct] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
-    if (!user || !month) return
+    if (!importer || !month) return
 
     // Build date range for the month
     const [year, mon] = month.split('-').map(Number)
@@ -106,7 +106,7 @@ export default function PreOrderMonthScreen() {
           products (id, name, image_url, supplier_name, tracking_number)
         )
       `)
-      .eq('store_id', user.id)
+      .eq('store_id', importer.id)
       .gte('created_at', startDate)
       .lt('created_at', endDate)
       .order('created_at', { ascending: false })
@@ -161,7 +161,7 @@ export default function PreOrderMonthScreen() {
     }
     setTrackingInputs(ti)
     setLoading(false)
-  }, [user, month])
+  }, [importer, month])
 
   useFocusEffect(useCallback(() => { fetchData() }, [fetchData]))
   async function onRefresh() { setRefreshing(true); await fetchData(); setRefreshing(false) }
