@@ -1,12 +1,12 @@
 import { useEffect } from 'react'
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import { View, Text, StyleSheet, Image } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { useImporterSession } from '@/lib/hooks/useImporterSession'
 import { Colors, FontSize, Spacing, Radius, Shadow } from '@/constants/theme'
-import { Image } from 'react-native'
 
 export default function WelcomeScreen() {
   const router = useRouter()
@@ -48,7 +48,7 @@ export default function WelcomeScreen() {
         <View style={s.card}>
           <View style={s.cardRow}>
             <View style={[s.iconBox, { backgroundColor: Colors.brandLight }]}>
-              <Text style={s.iconText}>🏪</Text>
+              <Ionicons name="storefront-outline" size={22} color={Colors.brand} />
             </View>
             <View style={s.cardInfo}>
               <Text style={s.cardTitle}>Business Owner</Text>
@@ -65,7 +65,7 @@ export default function WelcomeScreen() {
         <View style={s.card}>
           <View style={s.cardRow}>
             <View style={[s.iconBox, { backgroundColor: Colors.successLight }]}>
-              <Text style={s.iconText}>🛍️</Text>
+              <Ionicons name="bag-outline" size={22} color={Colors.success} />
             </View>
             <View style={s.cardInfo}>
               <Text style={s.cardTitle}>Customer</Text>
@@ -123,7 +123,6 @@ tagline: {
   },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   iconBox: { width: 44, height: 44, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
-  iconText: { fontSize: 22 },
   cardInfo: { flex: 1 },
   cardTitle: { fontSize: FontSize.base, fontWeight: '700', color: Colors.textPrimary },
   cardSub: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },

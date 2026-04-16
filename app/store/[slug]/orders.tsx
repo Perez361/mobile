@@ -517,35 +517,10 @@ export default function CustomerOrdersScreen() {
   const [refreshing, setRefreshing] = useState(false)
   
   const slug = storeSlug || ''
-  console.log('orders: storeSlug from context =', slug)
 
   const fetchOrders = useCallback(async () => {
-    console.log('orders: slug from params =', slug)
-    console.log('fetchOrders: slug=', slug, 'customer=', customer?.id)
-    if (!slug || !customer) {
-      console.log('fetchOrders: skipping - slug=', slug, 'customer=', customer ? customer.id : null)
-      return
-    }
-    console.log('fetching orders for customer:', customer.id)
-    
-    // Check if there are ANY orders for this store (to verify RLS allows some access)
-    const { count, error: countError } = await createCustomerClient(slug)
-      .from('orders')
-      .select('*', { count: 'exact', head: true })
-      .eq('store_id', customer.store_id)
-    console.log('Total orders in store (count):', count, 'error:', countError)
-    
-    // Fetch actual orders
-    const { data: simpleData, error: simpleError } = await createCustomerClient(slug)
-      .from('orders')
-      .select('id, total, status, created_at, shipping_fee')
-      .eq('customer_id', customer.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
-    
-    console.log('simple orders query result:', simpleData?.length || 0, 'error:', simpleError)
-    
-    // Now fetch with order_items
+    if (!slug || !customer) return
+
     const { data, error } = await createCustomerClient(slug)
       .from('orders')
       .select(`
@@ -555,11 +530,7 @@ export default function CustomerOrdersScreen() {
       `)
       .eq('customer_id', customer.id)
       .order('created_at', { ascending: false })
-    if (error) {
-      console.error('orders query error:', error)
-    }
-    console.log('orders with items fetched:', data?.length || 0)
-    setOrders((data as any) || [])
+    if (!error) setOrders((data as any) || [])
   }, [customer, slug])
 
   // Fetch when customer becomes available

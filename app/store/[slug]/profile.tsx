@@ -5,14 +5,14 @@ import {
   StyleSheet,
 } from 'react-native'
 import { useAlert } from '@/components/ui/AlertModal'
-import { useGlobalSearchParams, useRouter, useFocusEffect } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useCustomerContext } from '@/lib/hooks/CustomerContext'
 import { createCustomerClient } from '@/lib/supabase/customer-client'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
-import { formatCurrency, parseNumber } from '@/lib/utils'
+import { parseNumber } from '@/lib/utils'
 import { Colors, FontSize, Spacing, Radius } from '@/constants/theme'
 
 // ─── Status helpers (shared with orders) ─────────────────────────────────────
@@ -102,7 +102,6 @@ export default function CustomerProfileScreen() {
   const { showAlert } = useAlert()
   
   const slug = storeSlug || ''
-  console.log('profile: storeSlug from context =', slug)
 
   const [recentOrders, setRecentOrders] = useState<any[]>([])
   const [refreshing, setRefreshing] = useState(false)
@@ -114,19 +113,13 @@ export default function CustomerProfileScreen() {
   })
 
   const fetchData = useCallback(async () => {
-    if (!slug || !customer) {
-      console.log('profile fetchData: skipping - slug=', slug, 'customer=', customer ? customer.id : null)
-      return
-    }
-    console.log('profile: fetching orders for customer:', customer.id)
-    const supabase = createCustomerClient(slug)
-    const { data: orders, error } = await supabase
+    if (!slug || !customer) return
+    const { data: orders } = await createCustomerClient(slug)
       .from('orders')
       .select('id, total, status, created_at, shipping_fee')
       .eq('customer_id', customer.id)
       .order('created_at', { ascending: false })
       .limit(5)
-    console.log('profile orders result:', orders?.length || 0, 'error:', error)
     setRecentOrders(orders || [])
   }, [customer, slug])
 

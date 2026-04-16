@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { createImporterClient } from '@/lib/supabase/importer-client'
@@ -42,7 +43,8 @@ export default function LoginScreen() {
         <View style={s.header}>
           <SafeAreaView edges={['top']}>
             <TouchableOpacity onPress={() => router.back()} style={s.back}>
-              <Text style={s.backText}>← Back</Text>
+              <Ionicons name="chevron-back" size={16} color="rgba(255,255,255,0.8)" />
+              <Text style={s.backText}>Back</Text>
             </TouchableOpacity>
             <Text style={s.title}>Welcome back</Text>
             <Text style={s.subtitle}>Sign in to your ImportFlow dashboard</Text>
@@ -59,6 +61,10 @@ export default function LoginScreen() {
 
           <Button onPress={handleSubmit(onSubmit)} loading={loading} style={{ marginTop: Spacing.xs }}>Sign In</Button>
 
+          <TouchableOpacity style={s.forgotRow} onPress={() => router.push('/(auth)/forgot-password')}>
+            <Text style={s.forgotText}>Forgot your password?</Text>
+          </TouchableOpacity>
+
           <View style={s.footer}>
             <Text style={s.footerText}>Don't have an account?</Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
@@ -74,11 +80,13 @@ export default function LoginScreen() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.card },
   header: { backgroundColor: Colors.brand, paddingHorizontal: Spacing.xxl, paddingBottom: Spacing.xxxl },
-  back: { marginBottom: Spacing.xxl, marginTop: Spacing.md },
+  back: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: Spacing.xxl, marginTop: Spacing.md },
   backText: { color: 'rgba(255,255,255,0.8)', fontSize: FontSize.sm },
   title: { fontSize: FontSize.xxxl, fontWeight: '900', color: '#fff' },
   subtitle: { fontSize: FontSize.sm, color: 'rgba(255,255,255,0.85)', marginTop: Spacing.xs },
   form: { flex: 1, padding: Spacing.xxl, gap: Spacing.xl },
+  forgotRow: { alignItems: 'center', marginTop: -Spacing.sm },
+  forgotText: { fontSize: FontSize.sm, color: Colors.brand, fontWeight: '500' },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.sm },
   footerText: { fontSize: FontSize.sm, color: Colors.textMuted },
   link: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.brand },

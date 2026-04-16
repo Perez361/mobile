@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { View, Text, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import { createCustomerClient } from '@/lib/supabase/customer-client'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
@@ -32,13 +33,15 @@ export default function StoreEntryScreen() {
       <KeyboardAvoidingView style={s.kav} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={s.body}>
           <View style={s.heroSection}>
-            <Text style={s.heroIcon}>🛍️</Text>
+            <View style={s.heroIconBox}>
+              <Ionicons name="bag-handle-outline" size={40} color={Colors.brand} />
+            </View>
             <Text style={s.heroTitle}>Visit a Store</Text>
             <Text style={s.heroSub}>Enter the store name to browse products and place orders</Text>
           </View>
           <Input label="Store Name" placeholder="e.g. samsung-imports" value={slug} onChangeText={setSlug} autoCapitalize="none" autoCorrect={false} returnKeyType="go" onSubmitEditing={handleVisit} />
           <Button onPress={handleVisit} loading={loading}>Visit Store</Button>
-          <Button variant="ghost" onPress={() => router.back()}>← Back</Button>
+          <Button variant="ghost" onPress={() => router.back()}>Back</Button>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -50,7 +53,7 @@ const s = StyleSheet.create({
   kav: { flex: 1 },
   body: { flex: 1, paddingHorizontal: Spacing.xxl, justifyContent: 'center', gap: Spacing.xl },
   heroSection: { alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.sm },
-  heroIcon: { fontSize: 52 },
+  heroIconBox: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.brandLight, alignItems: 'center', justifyContent: 'center' },
   heroTitle: { fontSize: FontSize.xxl, fontWeight: '900', color: Colors.textPrimary, textAlign: 'center' },
   heroSub: { fontSize: FontSize.base, color: Colors.textMuted, textAlign: 'center' },
 })

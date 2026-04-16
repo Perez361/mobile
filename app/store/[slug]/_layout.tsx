@@ -160,8 +160,9 @@ function StoreTabs() {
           ),
         }}
       />
-      <Tabs.Screen name="login" options={{ href: null }} />
-      <Tabs.Screen name="register" options={{ href: null }} />
+      <Tabs.Screen name="login" options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }} />
+      <Tabs.Screen name="register" options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }} />
+      <Tabs.Screen name="forgot-password" options={{ tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }} />
     </Tabs>
   )
 }
