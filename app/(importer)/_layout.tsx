@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { useImporterSession } from '@/lib/hooks/useImporterSession'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Colors, FontSize } from '@/constants/theme'
+import { requestAndGetPushToken, savePushToken } from '@/lib/notifications/push'
+import { createImporterClient } from '@/lib/supabase/importer-client'
 
 type IconName = React.ComponentProps<typeof Ionicons>['name']
 
@@ -14,6 +16,14 @@ export default function ImporterLayout() {
   useEffect(() => {
     if (!loading && !user) router.replace('/')
   }, [user, loading])
+
+  // Register push token whenever the importer logs in
+  useEffect(() => {
+    if (!user) return
+    requestAndGetPushToken().then(token => {
+      if (token) savePushToken(createImporterClient(), token)
+    })
+  }, [user?.id])
 
   if (loading) return <LoadingSpinner fullScreen />
 

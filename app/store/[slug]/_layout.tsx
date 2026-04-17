@@ -3,9 +3,10 @@ import { View, Text, StyleSheet } from 'react-native'
 import { Tabs, useLocalSearchParams } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { createCustomerClient } from '@/lib/supabase/customer-client'
-import { CustomerProvider } from '@/lib/hooks/CustomerContext'
+import { CustomerProvider, useCustomerContext } from '@/lib/hooks/CustomerContext'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Colors, FontSize } from '@/constants/theme'
+import { requestAndGetPushToken, savePushToken } from '@/lib/notifications/push'
 
 export default function StoreLayout() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
@@ -56,8 +57,17 @@ export default function StoreLayout() {
 
 function StoreTabs() {
   const { slug } = useLocalSearchParams<{ slug: string }>()
+  const { user } = useCustomerContext()
   const [cartCount, setCartCount] = useState(0)
   const [initialLoadDone, setInitialLoadDone] = useState(false)
+
+  // Register push token whenever the customer logs in
+  useEffect(() => {
+    if (!user || !slug) return
+    requestAndGetPushToken().then(token => {
+      if (token) savePushToken(createCustomerClient(slug), token)
+    })
+  }, [user?.id, slug])
 
   // Keep cart badge count fresh - and update on focus
   useEffect(() => {
